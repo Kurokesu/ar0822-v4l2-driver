@@ -1,0 +1,5 @@
+#!/bin/sh
+
+dtc -Wno-interrupts_property -Wno-unit_address_vs_reg -@ -I dts -O dtb -o ar0822.dtbo ar0822-overlay.dts
+
+install -m 751 ar0822.dtbo /boot/overlays/
