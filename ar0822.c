@@ -72,20 +72,20 @@ struct ar0822_mode_reg_list {
 };
 
 struct ar0822_mode {
-	u64 lane_rate;
+	u64 link_frequency;
 	u32 hmax_min[2];
-	struct ar0822_mode_reg_list reg_list;
+	// struct ar0822_mode_reg_list reg_list;
 };
 
 /* mode configs */
 static const struct ar0822_mode supported_modes[] = {
 	{
-		.lane_rate = 720000000,
-		.hmax_min = { 2032, 1066 },
-		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(ar0822_linkrate_720mbps),
-			.regs = ar0822_linkrate_720mbps,
-		},
+		.link_frequency = 480000000,
+		.hmax_min = { 2032, 1066 }, // TODO
+		// .reg_list = {
+		// 	.num_of_regs = ARRAY_SIZE(ar0822_linkrate_720mbps),
+		// 	.regs = ar0822_linkrate_720mbps,
+		// },
 	},
 };
 
