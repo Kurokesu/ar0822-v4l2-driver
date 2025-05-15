@@ -21,6 +21,7 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
+#define AR0822_PIXEL_RATE 320000000
 #define AR0822_REG_ADDRESS_BITS 16
 
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
