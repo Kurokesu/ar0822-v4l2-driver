@@ -33,27 +33,27 @@ static const char *const ar0822_supply_names[] = {
 };
 
 struct ar0822_clk_params {
-	u64 lane_rate;
-	u64 extclk;
+	u64 link_frequency;
+	u64 extclk_frequency;
 	// struct cci_reg_sequence regs[IMX415_NUM_CLK_PARAM_REGS];
 };
 
 /* EXTCLK Settings - includes all lane rate and EXTCLK dependent registers */
 static const struct ar0822_clk_params ar0822_clk_params[] = {
 	{
-		.lane_rate = 594000000UL,
-		.extclk = 27000000,
-		.regs[0] = { IMX415_BCWAIT_TIME, 0x05D },
-		.regs[1] = { IMX415_CPWAIT_TIME, 0x042 },
-		.regs[2] = { IMX415_SYS_MODE, 0x7 },
-		.regs[3] = { IMX415_EXTCLKSEL1, 0x00 },
-		.regs[4] = { IMX415_EXTCLKSEL2, 0x23 },
-		.regs[5] = { IMX415_EXTCLKSEL3, 0x084 },
-		.regs[6] = { IMX415_EXTCLKSEL4, 0x0E7 },
-		.regs[7] = { IMX415_EXTCLKSEL5, 0x23 },
-		.regs[8] = { IMX415_EXTCLKSEL6, 0x0 },
-		.regs[9] = { IMX415_EXTCLKSEL7, 0x1 },
-		.regs[10] = { IMX415_TXCLKESC_FREQ, 0x06C0 },
+		.link_frequency = 480000000UL,
+		.extclk_frequency = 24000000,
+		// .regs[0] = { IMX415_BCWAIT_TIME, 0x05D },
+		// .regs[1] = { IMX415_CPWAIT_TIME, 0x042 },
+		// .regs[2] = { IMX415_SYS_MODE, 0x7 },
+		// .regs[3] = { IMX415_EXTCLKSEL1, 0x00 },
+		// .regs[4] = { IMX415_EXTCLKSEL2, 0x23 },
+		// .regs[5] = { IMX415_EXTCLKSEL3, 0x084 },
+		// .regs[6] = { IMX415_EXTCLKSEL4, 0x0E7 },
+		// .regs[7] = { IMX415_EXTCLKSEL5, 0x23 },
+		// .regs[8] = { IMX415_EXTCLKSEL6, 0x0 },
+		// .regs[9] = { IMX415_EXTCLKSEL7, 0x1 },
+		// .regs[10] = { IMX415_TXCLKESC_FREQ, 0x06C0 },
 	},
 };
 
