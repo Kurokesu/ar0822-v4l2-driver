@@ -967,4 +967,4 @@ module_i2c_driver(ar0822_driver);
 
 MODULE_DESCRIPTION("OnSemi AR0822 image sensor driver");
 MODULE_AUTHOR("Danius Kalvaitis <danius@kurokesu.com>");
-MODULE_LICENSE("GPL 2");
+MODULE_LICENSE("GPL v2");
