@@ -23,6 +23,8 @@
 
 #define AR0822_PIXEL_RATE 320000000
 #define AR0822_REG_ADDRESS_BITS 16
+#define AR0822_RESET_MIN_DELAY_US 7000
+#define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
 
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
@@ -624,33 +626,27 @@ static int ar0822_power_on(struct ar0822 *sensor)
 	if (ret < 0)
 		return ret;
 
-	gpiod_set_value_cansleep(sensor->reset, 0);
-
-	udelay(1);
-
-	ret = clk_prepare_enable(sensor->clk);
+	ret = clk_prepare_enable(sensor->extclk);
 	if (ret < 0)
 		goto err_reset;
 
-	/*
-	 * Data sheet states that 20 us are required before communication start,
-	 * but this doesn't work in all cases. Use 100 us to be on the safe
-	 * side.
-	 */
-	usleep_range(100, 200);
+	gpiod_set_value_cansleep(sensor->reset, 1);
+
+	usleep_range(AR0822_RESET_MIN_DELAY_US,
+		     AR0822_RESET_MAX_DELAY_US); // TODO this can be reduced
 
 	return 0;
 
 err_reset:
-	gpiod_set_value_cansleep(sensor->reset, 1);
+	gpiod_set_value_cansleep(sensor->reset, 0);
 	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 	return ret;
 }
 
 static void ar0822_power_off(struct ar0822 *sensor)
 {
-	clk_disable_unprepare(sensor->clk);
-	gpiod_set_value_cansleep(sensor->reset, 1);
+	clk_disable_unprepare(sensor->extclk);
+	gpiod_set_value_cansleep(sensor->reset, 0);
 	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 }
 
