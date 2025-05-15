@@ -854,6 +854,24 @@ static int ar0822_probe(struct i2c_client *client)
 	if (ret)
 		goto err_power_off;
 
+	/* sensor doesn't enter LP-11 state upon power up until and unless
+	* streaming is started, so upon power up switch the modes to:
+	* streaming -> standby
+	*/
+	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_STREAM_ON,
+			NULL);
+	if (ret < 0)
+		goto err_power_off;
+
+	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
+	usleep_range(2000, 2100);
+
+	/* Set the sensor back to low power mode */
+	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_LOW_POWER,
+			NULL);
+	if (ret < 0)
+		goto err_power_off;
+
 	/*
 	 * Enable runtime PM. As the device has been powered manually, mark it
 	 * as active, and increase the usage count without resuming the device.
