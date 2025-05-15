@@ -21,6 +21,8 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
+#define AR0822_REG_ADDRESS_BITS 16
+
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_TOP 0
@@ -824,11 +826,14 @@ static int ar0822_probe(struct i2c_client *client)
 
 	sensor->dev = &client->dev;
 
+	dev_dbg(sensor->dev, "probing AR0822 sensor\n");
+
 	ret = ar0822_parse_hw_config(sensor);
 	if (ret)
 		return ret;
 
-	sensor->regmap = devm_cci_regmap_init_i2c(client, 16);
+	sensor->regmap =
+		devm_cci_regmap_init_i2c(client, AR0822_REG_ADDRESS_BITS);
 	if (IS_ERR(sensor->regmap))
 		return PTR_ERR(sensor->regmap);
 
@@ -843,11 +848,11 @@ static int ar0822_probe(struct i2c_client *client)
 
 	ret = ar0822_identify_model(sensor);
 	if (ret)
-		goto err_power;
+		goto err_power_off;
 
 	ret = ar0822_subdev_init(sensor);
 	if (ret)
-		goto err_power;
+		goto err_power_off;
 
 	/*
 	 * Enable runtime PM. As the device has been powered manually, mark it
@@ -876,7 +881,7 @@ err_pm:
 	pm_runtime_disable(sensor->dev);
 	pm_runtime_put_noidle(sensor->dev);
 	ar0822_subdev_cleanup(sensor);
-err_power:
+err_power_off:
 	ar0822_power_off(sensor);
 	return ret;
 }
