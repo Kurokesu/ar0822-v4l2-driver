@@ -32,8 +32,11 @@
 #define AR0822_PIXEL_ARRAY_LEFT 0
 
 #define AR0822_MODEL_ID 0x0F56
+#define AR0822_MODE_LOW_POWER 0x0018
+#define AR0822_MODE_STREAM_ON (AR0822_MODE_LOW_POWER | (1 << 2))
 
 #define AR0822_REG_CHIP_VERSION 0x3000
+#define AR0822_REG_RESET 0x301A
 
 static const char *const ar0822_supply_names[] = {
 	"vana", /* Analog (2.8V) supply */
