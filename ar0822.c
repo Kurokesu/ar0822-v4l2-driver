@@ -111,7 +111,7 @@ static const char *const ar0822_test_pattern_menu[] = {
 
 struct ar0822 {
 	struct device *dev;
-	struct clk *clk;
+	struct clk *extclk;
 	unsigned long pixel_rate;
 	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
 	struct gpio_desc *reset;
@@ -694,15 +694,18 @@ done:
 
 static int ar0822_parse_hw_config(struct ar0822 *sensor)
 {
-	struct v4l2_fwnode_endpoint bus_cfg = {
+	struct v4l2_fwnode_endpoint endpoint_config = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
-	struct fwnode_handle *ep;
-	u64 lane_rate;
-	unsigned long inck;
+	struct fwnode_handle *endpoint;
+	u64 link_frequency;
+	unsigned long extclk_frequency;
 	unsigned int i, j;
 	int ret;
 
+	dev_dbg(sensor->dev, "parsing hardware configuration\n");
+
+	// Get the regulators
 	for (i = 0; i < AR0822_SUPPLY_AMOUNT; i++)
 		sensor->supplies[i].supply = ar0822_supply_names[i];
 
@@ -712,39 +715,49 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		return dev_err_probe(sensor->dev, ret,
 				     "failed to get supplies\n");
 
+	// Get the reset GPIO
 	sensor->reset =
 		devm_gpiod_get_optional(sensor->dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(sensor->reset))
 		return dev_err_probe(sensor->dev, PTR_ERR(sensor->reset),
 				     "failed to get reset GPIO\n");
 
-	sensor->clk = devm_clk_get(sensor->dev, "inck");
-	if (IS_ERR(sensor->clk))
-		return dev_err_probe(sensor->dev, PTR_ERR(sensor->clk),
-				     "failed to get clock\n");
+	// Get EXTCLK
+	sensor->extclk = devm_clk_get(sensor->dev, "extclk");
+	if (IS_ERR(sensor->extclk))
+		return dev_err_probe(sensor->dev, PTR_ERR(sensor->extclk),
+				     "failed to get EXTCLK\n");
 
-	ep = fwnode_graph_get_next_endpoint(dev_fwnode(sensor->dev), NULL);
-	if (!ep)
+	endpoint =
+		fwnode_graph_get_next_endpoint(dev_fwnode(sensor->dev), NULL);
+	if (!endpoint) {
+		dev_err(sensor->dev, "endpoint node not found\n");
 		return -ENXIO;
+	}
 
-	ret = v4l2_fwnode_endpoint_alloc_parse(ep, &bus_cfg);
-	fwnode_handle_put(ep);
-	if (ret)
+	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &endpoint_config);
+	fwnode_handle_put(endpoint);
+	if (ret) {
+		dev_err(sensor->dev, "failed to parse endpoint\n");
 		return ret;
+	}
 
-	switch (bus_cfg.bus.mipi_csi2.num_data_lanes) {
+	// TODO: check
+	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
 	case 2:
 	case 4:
-		sensor->num_data_lanes = bus_cfg.bus.mipi_csi2.num_data_lanes;
+		sensor->num_data_lanes =
+			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	default:
-		ret = dev_err_probe(sensor->dev, -EINVAL,
-				    "invalid number of CSI2 data lanes %d\n",
-				    bus_cfg.bus.mipi_csi2.num_data_lanes);
+		ret = dev_err_probe(
+			sensor->dev, -EINVAL,
+			"invalid number of CSI2 data lanes %d\n",
+			endpoint_config.bus.mipi_csi2.num_data_lanes);
 		goto done_endpoint_free;
 	}
 
-	if (!bus_cfg.nr_of_link_frequencies) {
+	if (!endpoint_config.nr_of_link_frequencies) {
 		ret = dev_err_probe(sensor->dev, -EINVAL,
 				    "no link frequencies defined");
 		goto done_endpoint_free;
@@ -754,46 +767,53 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	 * Check if there exists a sensor mode defined for current EXTCLK,
 	 * number of lanes and given lane rates.
 	 */
-	inck = clk_get_rate(sensor->clk);
-	for (i = 0; i < bus_cfg.nr_of_link_frequencies; ++i) {
-		if (imx415_check_inck(inck, bus_cfg.link_frequencies[i])) {
+	extclk_frequency = clk_get_rate(sensor->extclk);
+	dev_dbg(sensor->dev, "EXTCLK frequency: %lu Hz, number of lanes: %d\n",
+		extclk_frequency, sensor->num_data_lanes);
+
+	for (i = 0; i < endpoint_config.nr_of_link_frequencies; i++) {
+		if (ar0822_check_extclk(extclk_frequency,
+					endpoint_config.link_frequencies[i])) {
 			dev_dbg(sensor->dev,
 				"EXTCLK %lu Hz not supported for this link freq",
-				inck);
+				extclk_frequency);
 			continue;
 		}
 
-		for (j = 0; j < ARRAY_SIZE(supported_modes); ++j) {
-			if (bus_cfg.link_frequencies[i] * 2 !=
-			    supported_modes[j].lane_rate)
+		for (j = 0; j < ARRAY_SIZE(supported_modes); j++) {
+			if (endpoint_config.link_frequencies[i] !=
+			    supported_modes[j].link_frequency)
 				continue;
 			sensor->cur_mode = j;
 			break;
 		}
+
 		if (j < ARRAY_SIZE(supported_modes))
 			break;
 	}
-	if (i == bus_cfg.nr_of_link_frequencies) {
+
+	if (i == endpoint_config.nr_of_link_frequencies) {
 		ret = dev_err_probe(sensor->dev, -EINVAL,
 				    "no valid sensor mode defined\n");
 		goto done_endpoint_free;
 	}
-	switch (inck) {
-	case 27000000:
-	case 37125000:
-	case 74250000:
-		sensor->pixel_rate = IMX415_PIXEL_RATE_74_25MHZ;
-		break;
+
+	switch (extclk_frequency) {
+	// case 27000000:
+	// case 37125000:
+	// case 74250000:
+	// 	sensor->pixel_rate = IMX415_PIXEL_RATE_74_25MHZ;
+	// 	break;
 	case 24000000:
-	case 72000000:
-		sensor->pixel_rate = IMX415_PIXEL_RATE_72MHZ;
+		// case 72000000:
+		sensor->pixel_rate = AR0822_PIXEL_RATE;
 		break;
 	}
 
-	lane_rate = supported_modes[sensor->cur_mode].lane_rate;
-	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); ++i) {
-		if (lane_rate == ar0822_clk_params[i].lane_rate &&
-		    inck == ar0822_clk_params[i].inck) {
+	link_frequency = supported_modes[sensor->cur_mode].link_frequency;
+	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); i++) {
+		if (link_frequency == ar0822_clk_params[i].link_frequency &&
+		    extclk_frequency == ar0822_clk_params[i].extclk_frequency) {
 			sensor->clk_params = &ar0822_clk_params[i];
 			break;
 		}
@@ -806,11 +826,12 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	}
 
 	ret = 0;
-	dev_dbg(sensor->dev, "clock: %lu Hz, lane_rate: %llu bps, lanes: %d\n",
-		inck, lane_rate, sensor->num_data_lanes);
+	dev_dbg(sensor->dev,
+		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
+		extclk_frequency, link_frequency, sensor->num_data_lanes);
 
 done_endpoint_free:
-	v4l2_fwnode_endpoint_free(&bus_cfg);
+	v4l2_fwnode_endpoint_free(&endpoint_config);
 
 	return ret;
 }
