@@ -32,6 +32,8 @@ static const char *const ar0822_supply_names[] = {
 	"vddl", /* IF (1.2V) supply */
 };
 
+#define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
+
 struct ar0822_clk_params {
 	u64 link_frequency;
 	u64 extclk_frequency;
@@ -109,7 +111,7 @@ struct ar0822 {
 	struct device *dev;
 	struct clk *clk;
 	unsigned long pixel_rate;
-	struct regulator_bulk_data supplies[ARRAY_SIZE(ar0822_supply_names)];
+	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
 	struct gpio_desc *reset;
 	struct regmap *regmap;
 
@@ -614,8 +616,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 {
 	int ret;
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(sensor->supplies),
-				    sensor->supplies);
+	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 	if (ret < 0)
 		return ret;
 
@@ -638,7 +639,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 
 err_reset:
 	gpiod_set_value_cansleep(sensor->reset, 1);
-	regulator_bulk_disable(ARRAY_SIZE(sensor->supplies), sensor->supplies);
+	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 	return ret;
 }
 
@@ -646,7 +647,7 @@ static void ar0822_power_off(struct ar0822 *sensor)
 {
 	clk_disable_unprepare(sensor->clk);
 	gpiod_set_value_cansleep(sensor->reset, 1);
-	regulator_bulk_disable(ARRAY_SIZE(sensor->supplies), sensor->supplies);
+	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 }
 
 static int ar0822_identify_model(struct ar0822 *sensor)
@@ -700,10 +701,10 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	unsigned int i, j;
 	int ret;
 
-	for (i = 0; i < ARRAY_SIZE(sensor->supplies); ++i)
+	for (i = 0; i < AR0822_SUPPLY_AMOUNT; i++)
 		sensor->supplies[i].supply = ar0822_supply_names[i];
 
-	ret = devm_regulator_bulk_get(sensor->dev, ARRAY_SIZE(sensor->supplies),
+	ret = devm_regulator_bulk_get(sensor->dev, AR0822_SUPPLY_AMOUNT,
 				      sensor->supplies);
 	if (ret)
 		return dev_err_probe(sensor->dev, ret,
