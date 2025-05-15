@@ -676,6 +676,23 @@ static int ar0822_identify_model(struct ar0822 *sensor)
 
 	return ret;
 }
+
+static int ar0822_check_extclk(unsigned long extclk_frequency,
+			       u64 link_frequency)
+{
+	unsigned int i;
+
+	// TODO: optimize
+	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); i++) {
+		if ((ar0822_clk_params[i].link_frequency == link_frequency) &&
+		    ar0822_clk_params[i].extclk_frequency == extclk_frequency)
+			break;
+	}
+
+	if (i == ARRAY_SIZE(ar0822_clk_params))
+		return -EINVAL;
+
+	return 0;
 }
 
 static int ar0822_parse_hw_config(struct ar0822 *sensor)
