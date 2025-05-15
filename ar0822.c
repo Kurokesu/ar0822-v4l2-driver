@@ -22,19 +22,9 @@
 #include <media/v4l2-subdev.h>
 
 static const char *const ar0822_supply_names[] = {
-	"dvdd",
-	"ovdd",
-	"avdd",
-};
-
-/*
- * The AR0822 data sheet uses lane rates but v4l2 uses link frequency to
- * describe MIPI CSI-2 speed. This driver uses lane rates wherever possible
- * and converts them to link frequencies by a factor of two when needed.
- */
-static const s64 link_freq_menu_items[] = {
-	594000000 / 2,	720000000 / 2,	891000000 / 2,
-	1440000000 / 2, 1485000000 / 2,
+	"vana", /* Analog (2.8V) supply */
+	"vdig", /* Digital Core (1.8V) supply */
+	"vddl", /* IF (1.2V) supply */
 };
 
 struct ar0822_clk_params {
