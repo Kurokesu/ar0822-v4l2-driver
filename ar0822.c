@@ -472,7 +472,7 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 	if (code->index != 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SGBRG10_1X10;
+	code->code = MEDIA_BUS_FMT_SGRBG12_1X12;
 
 	return 0;
 }
@@ -505,7 +505,7 @@ static int ar0822_set_format(struct v4l2_subdev *sd,
 
 	format->width = fmt->format.width;
 	format->height = fmt->format.height;
-	format->code = MEDIA_BUS_FMT_SGBRG10_1X10;
+	format->code = MEDIA_BUS_FMT_SGRBG12_1X12;
 	format->field = V4L2_FIELD_NONE;
 	format->colorspace = V4L2_COLORSPACE_RAW;
 	format->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
