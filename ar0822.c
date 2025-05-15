@@ -21,6 +21,11 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
+#define AR0822_PIXEL_ARRAY_WIDTH 3840
+#define AR0822_PIXEL_ARRAY_HEIGHT 2160
+#define AR0822_PIXEL_ARRAY_TOP 0
+#define AR0822_PIXEL_ARRAY_LEFT 0
+
 static const char *const ar0822_supply_names[] = {
 	"vana", /* Analog (2.8V) supply */
 	"vdig", /* Digital Core (1.8V) supply */
@@ -488,9 +493,9 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	if (fse->index > 0 || fse->code != format->code)
 		return -EINVAL;
 
-	fse->min_width = IMX415_PIXEL_ARRAY_WIDTH;
+	fse->min_width = AR0822_PIXEL_ARRAY_WIDTH;
 	fse->max_width = fse->min_width;
-	fse->min_height = IMX415_PIXEL_ARRAY_HEIGHT;
+	fse->min_height = AR0822_PIXEL_ARRAY_HEIGHT;
 	fse->max_height = fse->min_height;
 	return 0;
 }
@@ -524,10 +529,10 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.top = IMX415_PIXEL_ARRAY_TOP;
-		sel->r.left = IMX415_PIXEL_ARRAY_LEFT;
-		sel->r.width = IMX415_PIXEL_ARRAY_WIDTH;
-		sel->r.height = IMX415_PIXEL_ARRAY_HEIGHT;
+		sel->r.top = AR0822_PIXEL_ARRAY_TOP;
+		sel->r.left = AR0822_PIXEL_ARRAY_LEFT;
+		sel->r.width = AR0822_PIXEL_ARRAY_WIDTH;
+		sel->r.height = AR0822_PIXEL_ARRAY_HEIGHT;
 
 		return 0;
 	}
@@ -540,8 +545,8 @@ static int ar0822_init_state(struct v4l2_subdev *sd,
 {
 	struct v4l2_subdev_format format = {
 		.format = {
-			.width = IMX415_PIXEL_ARRAY_WIDTH,
-			.height = IMX415_PIXEL_ARRAY_HEIGHT,
+			.width = AR0822_PIXEL_ARRAY_WIDTH,
+			.height = AR0822_PIXEL_ARRAY_HEIGHT,
 		},
 	};
 
