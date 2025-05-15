@@ -31,6 +31,10 @@
 #define AR0822_PIXEL_ARRAY_TOP 0
 #define AR0822_PIXEL_ARRAY_LEFT 0
 
+#define AR0822_MODEL_ID 0x0F56
+
+#define AR0822_REG_CHIP_VERSION 0x3000
+
 static const char *const ar0822_supply_names[] = {
 	"vana", /* Analog (2.8V) supply */
 	"vdig", /* Digital Core (1.8V) supply */
@@ -652,42 +656,26 @@ static void ar0822_power_off(struct ar0822 *sensor)
 
 static int ar0822_identify_model(struct ar0822 *sensor)
 {
-	int model, ret;
-	u64 chip_id;
+	int ret;
+	u64 model_id;
 
-	/*
-	 * While most registers can be read when the sensor is in standby, this
-	 * is not the case of the sensor info register :-(
-	 */
-	ret = ar0822_wakeup(sensor);
-	if (ret)
-		return dev_err_probe(sensor->dev, ret,
-				     "failed to get sensor out of standby\n");
-
-	ret = cci_read(sensor->regmap, IMX415_SENSOR_INFO, &chip_id, NULL);
+	ret = cci_read(sensor->regmap, AR0822_REG_CHIP_VERSION, &model_id,
+		       NULL);
 	if (ret < 0) {
 		dev_err_probe(sensor->dev, ret,
 			      "failed to read sensor information\n");
-		goto done;
+		return ret;
 	}
 
-	model = chip_id & IMX415_SENSOR_INFO_MASK;
-
-	switch (model) {
-	case IMX415_CHIP_ID:
-		dev_info(sensor->dev, "Detected IMX415 image sensor\n");
-		break;
-	default:
-		ret = dev_err_probe(sensor->dev, -ENODEV,
-				    "invalid device model 0x%04x\n", model);
-		goto done;
+	if (model_id != AR0822_MODEL_ID) {
+		dev_err(sensor->dev, "invalid model id 0x%04llx\n", model_id);
+		return -ENODEV;
 	}
 
-	ret = 0;
+	dev_info(sensor->dev, "Detected AR0822 image sensor\n");
 
-done:
-	cci_write(sensor->regmap, IMX415_MODE, IMX415_MODE_STANDBY, &ret);
 	return ret;
+}
 }
 
 static int ar0822_parse_hw_config(struct ar0822 *sensor)
