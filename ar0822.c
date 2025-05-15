@@ -406,13 +406,14 @@ static int ar0822_wakeup(struct ar0822 *sensor)
 	return 0;
 }
 
-static int ar0822_stream_on(struct ar0822 *sensor)
+static int ar0822_mode_stream_on(struct ar0822 *sensor)
 {
-	int ret;
+	// int ret;
 
-	ret = ar0822_wakeup(sensor);
-	return cci_write(sensor->regmap, IMX415_XMSTA, IMX415_XMSTA_START,
-			 &ret);
+	return -1; // TODO: implement
+	// ret = ar0822_wakeup(sensor);
+	// return cci_write(sensor->regmap, IMX415_XMSTA, IMX415_XMSTA_START,
+	// 		 &ret);
 }
 
 static int ar0822_stream_off(struct ar0822 *sensor)
@@ -453,7 +454,7 @@ static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
 	if (ret < 0)
 		goto err_pm;
 
-	ret = ar0822_stream_on(sensor);
+	ret = ar0822_mode_stream_on(sensor);
 	if (ret)
 		goto err_pm;
 
@@ -504,9 +505,9 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int ar0822_set_format(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *state,
-			     struct v4l2_subdev_format *fmt)
+static int ar0822_set_pad_format(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *state,
+				 struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *format;
 
@@ -554,7 +555,7 @@ static int ar0822_init_state(struct v4l2_subdev *sd,
 		},
 	};
 
-	ar0822_set_format(sd, state, &format);
+	ar0822_set_pad_format(sd, state, &format);
 
 	return 0;
 }
@@ -567,7 +568,7 @@ static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
 	.get_fmt = v4l2_subdev_get_fmt,
-	.set_fmt = ar0822_set_format,
+	.set_fmt = ar0822_set_pad_format,
 	.get_selection = ar0822_get_selection,
 };
 
