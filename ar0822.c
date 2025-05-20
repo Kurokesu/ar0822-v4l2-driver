@@ -112,7 +112,6 @@ static const s64 link_freq_menu_items[] = {
 struct ar0822_clk_params {
 	u64 link_frequency;
 	u64 extclk_frequency;
-	// struct cci_reg_sequence regs[IMX415_NUM_CLK_PARAM_REGS];
 };
 
 /* EXTCLK Settings - includes all lane rate and EXTCLK dependent registers */
@@ -120,27 +119,16 @@ static const struct ar0822_clk_params ar0822_clk_params[] = {
 	{
 		.link_frequency = 480000000UL,
 		.extclk_frequency = 24000000,
-		// .regs[0] = { IMX415_BCWAIT_TIME, 0x05D },
-		// .regs[1] = { IMX415_CPWAIT_TIME, 0x042 },
-		// .regs[2] = { IMX415_SYS_MODE, 0x7 },
-		// .regs[3] = { IMX415_EXTCLKSEL1, 0x00 },
-		// .regs[4] = { IMX415_EXTCLKSEL2, 0x23 },
-		// .regs[5] = { IMX415_EXTCLKSEL3, 0x084 },
-		// .regs[6] = { IMX415_EXTCLKSEL4, 0x0E7 },
-		// .regs[7] = { IMX415_EXTCLKSEL5, 0x23 },
-		// .regs[8] = { IMX415_EXTCLKSEL6, 0x0 },
-		// .regs[9] = { IMX415_EXTCLKSEL7, 0x1 },
-		// .regs[10] = { IMX415_TXCLKESC_FREQ, 0x06C0 },
 	},
 };
 
-/* 720 Mbps CSI configuration */
-static const struct cci_reg_sequence ar0822_linkrate_720mbps[] = {
-	{ IMX415_TCLKPOST, 0x006F },   { IMX415_TCLKPREPARE, 0x002F },
-	{ IMX415_TCLKTRAIL, 0x002F },  { IMX415_TCLKZERO, 0x00BF },
-	{ IMX415_THSPREPARE, 0x002F }, { IMX415_THSZERO, 0x0057 },
-	{ IMX415_THSTRAIL, 0x002F },   { IMX415_THSEXIT, 0x004F },
-	{ IMX415_TLPX, 0x0027 },
+/* Example mode register list (replace with actual values for your mode) */
+static const struct cci_reg_sequence ar0822_link_480mbps[] = {
+	// TODO: Fill with actual mode registers for 1920x1080@30fps, 2-lane, 480Mbps
+	// { AR0822_REG_X_ADDR_START, 0x0000 },
+	// { AR0822_REG_X_ADDR_END,   0x077F }, // 1920 width
+	// { AR0822_REG_Y_ADDR_START, 0x0000 },
+	// { AR0822_REG_Y_ADDR_END,   0x0437 }, // 1080 height
 };
 
 struct ar0822_mode_reg_list {
@@ -283,29 +271,31 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 	return container_of(sd, struct ar0822, subdev);
 }
 
-static int ar0822_set_testpattern(struct ar0822 *sensor, int val)
-{
-	int ret = 0;
+// static int ar0822_set_testpattern(struct ar0822 *sensor, int val)
+// {
+// 	// int ret = 0;
 
-	if (val) {
-		cci_write(sensor->regmap, IMX415_BLKLEVEL, 0x00, &ret);
-		cci_write(sensor->regmap, IMX415_TPG_EN_DUOUT, 0x01, &ret);
-		cci_write(sensor->regmap, IMX415_TPG_PATSEL_DUOUT, val - 1,
-			  &ret);
-		cci_write(sensor->regmap, IMX415_TPG_COLORWIDTH, 0x01, &ret);
-		cci_write(sensor->regmap, IMX415_TESTCLKEN_MIPI, 0x20, &ret);
-		cci_write(sensor->regmap, IMX415_DIG_CLP_MODE, 0x00, &ret);
-		cci_write(sensor->regmap, IMX415_WRJ_OPEN, 0x00, &ret);
-	} else {
-		cci_write(sensor->regmap, IMX415_BLKLEVEL,
-			  IMX415_BLKLEVEL_DEFAULT, &ret);
-		cci_write(sensor->regmap, IMX415_TPG_EN_DUOUT, 0x00, &ret);
-		cci_write(sensor->regmap, IMX415_TESTCLKEN_MIPI, 0x00, &ret);
-		cci_write(sensor->regmap, IMX415_DIG_CLP_MODE, 0x01, &ret);
-		cci_write(sensor->regmap, IMX415_WRJ_OPEN, 0x01, &ret);
-	}
-	return 0;
-}
+// 	return -1; // TODO: implement
+
+// if (val) {
+// 	cci_write(sensor->regmap, IMX415_BLKLEVEL, 0x00, &ret);
+// 	cci_write(sensor->regmap, IMX415_TPG_EN_DUOUT, 0x01, &ret);
+// 	cci_write(sensor->regmap, IMX415_TPG_PATSEL_DUOUT, val - 1,
+// 		  &ret);
+// 	cci_write(sensor->regmap, IMX415_TPG_COLORWIDTH, 0x01, &ret);
+// 	cci_write(sensor->regmap, IMX415_TESTCLKEN_MIPI, 0x20, &ret);
+// 	cci_write(sensor->regmap, IMX415_DIG_CLP_MODE, 0x00, &ret);
+// 	cci_write(sensor->regmap, IMX415_WRJ_OPEN, 0x00, &ret);
+// } else {
+// 	cci_write(sensor->regmap, IMX415_BLKLEVEL,
+// 		  IMX415_BLKLEVEL_DEFAULT, &ret);
+// 	cci_write(sensor->regmap, IMX415_TPG_EN_DUOUT, 0x00, &ret);
+// 	cci_write(sensor->regmap, IMX415_TESTCLKEN_MIPI, 0x00, &ret);
+// 	cci_write(sensor->regmap, IMX415_DIG_CLP_MODE, 0x01, &ret);
+// 	cci_write(sensor->regmap, IMX415_WRJ_OPEN, 0x01, &ret);
+// }
+// return 0;
+// }
 
 static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 {
