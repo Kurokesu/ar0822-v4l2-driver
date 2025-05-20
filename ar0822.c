@@ -437,6 +437,9 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
+	dev_dbg(sensor->dev, "initializing controls\n");
+	dev_dbg(sensor->dev, "current mode: %d\n", sensor->cur_mode);
+
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
 	u64 link_frequency =
@@ -464,6 +467,8 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 				     "link frequency %llu not supported\n",
 				     link_frequency);
 	}
+
+	dev_dbg(sensor->dev, "link frequency: %llu\n", link_frequency);
 
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
@@ -557,6 +562,8 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 {
 	int ret;
 
+	dev_dbg(sensor->dev, "%s: setting up sensor\n", __func__);
+
 	ret = cci_multi_reg_write(sensor->regmap, ar0822_init_table,
 				  ARRAY_SIZE(ar0822_init_table), NULL);
 	if (ret)
@@ -589,6 +596,8 @@ static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
 	struct ar0822 *sensor = to_ar0822(sd);
 	struct v4l2_subdev_state *state;
 	int ret;
+
+	pr_info("%s enable %d\n", __func__, enable);
 
 	state = v4l2_subdev_lock_and_get_active_state(sd);
 
@@ -638,6 +647,8 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
+	pr_info("%s\n", __func__);
+
 	if (code->index != 0)
 		return -EINVAL;
 
@@ -651,6 +662,8 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	const struct v4l2_mbus_framefmt *format;
+
+	pr_info("%s\n", __func__);
 
 	format = v4l2_subdev_state_get_format(state, fse->pad);
 
@@ -912,6 +925,8 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	struct i2c_client *client = to_i2c_client(sensor->dev);
 	int ret;
 
+	dev_dbg(sensor->dev, "%s\n", __func__);
+
 	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
 
 	ret = ar0822_ctrls_init(sensor);
@@ -944,6 +959,8 @@ static int ar0822_power_on(struct ar0822 *sensor)
 {
 	int ret;
 
+	dev_dbg(sensor->dev, "%s\n", __func__);
+
 	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
 	if (ret < 0)
 		return ret;
@@ -967,6 +984,7 @@ err_reset:
 
 static void ar0822_power_off(struct ar0822 *sensor)
 {
+	dev_dbg(sensor->dev, "%s\n", __func__);
 	clk_disable_unprepare(sensor->extclk);
 	gpiod_set_value_cansleep(sensor->reset, 0);
 	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
@@ -1106,6 +1124,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 			    supported_modes[j].link_frequency)
 				continue;
 			sensor->cur_mode = j;
+			dev_dbg(sensor->dev, "set sensor mode %d\n", j);
 			break;
 		}
 
@@ -1237,6 +1256,8 @@ static int ar0822_probe(struct i2c_client *client)
 	pm_runtime_set_autosuspend_delay(sensor->dev, 1000);
 	pm_runtime_use_autosuspend(sensor->dev);
 	pm_runtime_put_autosuspend(sensor->dev);
+
+	dev_dbg(sensor->dev, "AR0822 sensor probed successfully\n");
 
 	return 0;
 
