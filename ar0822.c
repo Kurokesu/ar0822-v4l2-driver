@@ -763,25 +763,96 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 	return ret;
 }
 
+static void ar0822_set_framing_limits(struct ar0822 *sensor)
+{
+	const struct ar0822_mode *mode = sensor->mode;
+	int exposure_max, exposure_def, hblank;
+
+	/* Update limits and set FPS to default */
+	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
+				 AR0822_VTS_MAX - mode->height, 1,
+				 mode->vts_def - mode->height);
+	__v4l2_ctrl_s_ctrl(sensor->vblank, mode->vts_def - mode->height);
+	/*
+			* Update max exposure while meeting
+			* expected vblanking
+			*/
+	exposure_max = mode->vts_def - 4;
+	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
+			       exposure_max :
+			       AR0822_EXPOSURE_DEFAULT;
+	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
+				 exposure_max, sensor->exposure->step,
+				 exposure_def);
+	/*
+			* Currently PPL is fixed to AR0234_PPL_DEFAULT, so
+			* hblank depends on mode->width only, and is not
+			* changeble in any way other than changing the mode.
+			*/
+	hblank = AR0822_PPL_DEFAULT - mode->width;
+	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
+}
+
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
-	struct v4l2_mbus_framefmt *format;
+	struct ar0822 *sensor = to_ar0822(sd);
+	const struct ar0822_mode *mode;
+	struct v4l2_mbus_framefmt *framefmt;
 
-	format = v4l2_subdev_state_get_format(state, fmt->pad);
+	if (fmt->pad >= NUM_PADS)
+		return -EINVAL;
 
-	format->width = fmt->format.width;
-	format->height = fmt->format.height;
-	format->code = MEDIA_BUS_FMT_SGRBG12_1X12;
-	format->field = V4L2_FIELD_NONE;
-	format->colorspace = V4L2_COLORSPACE_RAW;
-	format->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
-	format->quantization = V4L2_QUANTIZATION_DEFAULT;
-	format->xfer_func = V4L2_XFER_FUNC_NONE;
+	mutex_lock(&sensor->mutex);
 
-	fmt->format = *format;
+	if (fmt->pad == IMAGE_PAD) {
+		fmt->format.code =
+			ar0822_get_format_code(sensor, fmt->format.code);
+
+		mode = v4l2_find_nearest_size(
+			ar0822_supported_modes,
+			ARRAY_SIZE(ar0822_supported_modes), width, height,
+			fmt->format.width, fmt->format.height);
+		ar0822_update_image_pad_format(sensor, mode, fmt);
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else if (sensor->mode != mode ||
+			   sensor->fmt_code != fmt->format.code) {
+			sensor->mode = mode;
+			sensor->fmt_code = fmt->format.code;
+			ar0822_set_framing_limits(sensor);
+		}
+	} else {
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else {
+			/* Only one embedded data mode is supported */
+			ar0822_update_metadata_pad_format(fmt);
+		}
+	}
+
+	mutex_unlock(&sensor->mutex);
+
 	return 0;
+}
+
+static const struct v4l2_rect *
+__ar0822_get_pad_crop(struct ar0822 *sensor, struct v4l2_subdev_state *sd_state,
+		      unsigned int pad, enum v4l2_subdev_format_whence which)
+{
+	switch (which) {
+	case V4L2_SUBDEV_FORMAT_TRY:
+		return v4l2_subdev_state_get_crop(sd_state, pad);
+	case V4L2_SUBDEV_FORMAT_ACTIVE:
+		return &sensor->mode->crop;
+	}
+
+	return NULL;
 }
 
 static int ar0822_get_selection(struct v4l2_subdev *sd,
@@ -789,7 +860,23 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_selection *sel)
 {
 	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP:
+	case V4L2_SEL_TGT_CROP: {
+		struct ar0822 *sensor = to_ar0822(sd);
+
+		mutex_lock(&sensor->mutex);
+		sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
+						sel->which);
+		mutex_unlock(&sensor->mutex);
+
+		return 0;
+	}
+	case V4L2_SEL_TGT_NATIVE_SIZE:
+		sel->r.top = 0;
+		sel->r.left = 0;
+		sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
+		sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
+
+		return 0;
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 		sel->r.top = AR0822_PIXEL_ARRAY_TOP;
@@ -803,21 +890,6 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	return -EINVAL;
 }
 
-static int ar0822_init_state(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *state)
-{
-	struct v4l2_subdev_format format = {
-		.format = {
-			.width = AR0822_PIXEL_ARRAY_WIDTH,
-			.height = AR0822_PIXEL_ARRAY_HEIGHT,
-		},
-	};
-
-	ar0822_set_pad_format(sd, state, &format);
-
-	return 0;
-}
-
 static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
 	.s_stream = ar0822_s_stream,
 };
@@ -825,7 +897,7 @@ static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
 static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
-	.get_fmt = v4l2_subdev_get_fmt,
+	.get_fmt = ar0822_get_pad_format,
 	.set_fmt = ar0822_set_pad_format,
 	.get_selection = ar0822_get_selection,
 };
@@ -835,17 +907,12 @@ static const struct v4l2_subdev_ops ar0822_subdev_ops = {
 	.pad = &ar0822_subdev_pad_ops,
 };
 
-static const struct v4l2_subdev_internal_ops ar0822_internal_ops = {
-	.init_state = ar0822_init_state,
-};
-
 static int ar0822_subdev_init(struct ar0822 *sensor)
 {
 	struct i2c_client *client = to_i2c_client(sensor->dev);
 	int ret;
 
 	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
-	sensor->subdev.internal_ops = &ar0822_internal_ops;
 
 	ret = ar0822_ctrls_init(sensor);
 	if (ret)
