@@ -23,6 +23,9 @@
 
 #define AR0822_PIXEL_RATE 320000000
 #define AR0822_REG_ADDRESS_BITS 16
+
+#define AR0822_EMBEDDED_LINE_WIDTH 16384
+#define AR0822_NUM_EMBEDDED_LINES 2
 #define AR0822_RESET_MIN_DELAY_US 7000
 #define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
 
@@ -91,6 +94,8 @@
 #define AR0822_REG_MIPI_F3_VC CCI_REG16(0x334C)
 #define AR0822_REG_MIPI_F4_PDT CCI_REG16(0x334E)
 #define AR0822_REG_MIPI_F4_VC CCI_REG16(0x3350)
+
+enum pad_types { IMAGE_PAD, METADATA_PAD, NUM_PADS };
 
 static const char *const ar0822_supply_names[] = {
 	"vana", /* Analog (2.8V) supply */
@@ -626,6 +631,105 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	return 0;
 }
 
+/*
+ * The supported formats.
+ * This table MUST contain 4 entries per format, to cover the various flip
+ * combinations in the order
+ * - no flip
+ * - h flip
+ * - v flip
+ * - h&v flips
+ */
+static const u32 codes[] = {
+	/* 12-bit modes. */
+	MEDIA_BUS_FMT_SGRBG12_1X12,
+	MEDIA_BUS_FMT_SGBRG12_1X12, // TODO: check
+	MEDIA_BUS_FMT_SBGGR12_1X12,
+	MEDIA_BUS_FMT_SGRBG12_1X12,
+};
+
+/* Get bayer order based on flip setting. */
+static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
+{
+	unsigned int i;
+
+	lockdep_assert_held(&sensor->mutex);
+
+	i = (sensor->vflip->val ? 2 : 0) | (sensor->hflip->val ? 1 : 0);
+
+	return codes[i];
+}
+
+static void ar0822_set_default_format(struct ar0822 *sensor)
+{
+	/* Set default mode to max resolution */
+	sensor->mode = &ar0822_supported_modes[0];
+	sensor->fmt_code = MEDIA_BUS_FMT_SGRBG12_1X12;
+}
+
+static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
+{
+	fmt->colorspace = V4L2_COLORSPACE_SRGB;
+	fmt->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(fmt->colorspace);
+	fmt->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(true, fmt->colorspace,
+							  fmt->ycbcr_enc);
+	fmt->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
+}
+
+static void ar0822_update_image_pad_format(struct ar0822 *sensor,
+					   const struct ar0822_mode *mode,
+					   struct v4l2_subdev_format *fmt)
+{
+	fmt->format.width = mode->width;
+	fmt->format.height = mode->height;
+	fmt->format.field = V4L2_FIELD_NONE;
+	ar0822_reset_colorspace(&fmt->format);
+}
+
+static void ar0822_update_metadata_pad_format(struct v4l2_subdev_format *fmt)
+{
+	fmt->format.width = AR0822_EMBEDDED_LINE_WIDTH;
+	fmt->format.height = AR0822_NUM_EMBEDDED_LINES;
+	fmt->format.code = MEDIA_BUS_FMT_SENSOR_DATA;
+	fmt->format.field = V4L2_FIELD_NONE;
+}
+
+static int ar0822_get_pad_format(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *sd_state,
+				 struct v4l2_subdev_format *fmt)
+{
+	struct ar0822 *sensor = to_ar0822(sd);
+	int ret;
+
+	if (fmt->pad >= NUM_PADS)
+		return -EINVAL;
+
+	mutex_lock(&sensor->mutex);
+
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+		struct v4l2_mbus_framefmt *try_fmt =
+			v4l2_subdev_state_get_format(sd_state, fmt->pad);
+		/* update the code which could change due to vflip or hflip: */
+		try_fmt->code =
+			fmt->pad == IMAGE_PAD ?
+				ar0822_get_format_code(sensor, try_fmt->code) :
+				MEDIA_BUS_FMT_SENSOR_DATA;
+		fmt->format = *try_fmt;
+	} else {
+		if (fmt->pad == IMAGE_PAD) {
+			ar0822_update_image_pad_format(sensor, sensor->mode,
+						       fmt);
+			fmt->format.code = ar0822_get_format_code(
+				sensor, sensor->fmt_code);
+		} else {
+			ar0822_update_metadata_pad_format(fmt);
+		}
+	}
+	mutex_unlock(&sensor->mutex);
+
+	return ret;
+}
+
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
@@ -987,6 +1091,9 @@ static int ar0822_probe(struct i2c_client *client)
 	ret = ar0822_identify_model(sensor);
 	if (ret)
 		goto err_power_off;
+
+	/* Initialize default format */
+	ar0822_set_default_format(sensor);
 
 	ret = ar0822_subdev_init(sensor);
 	if (ret)
