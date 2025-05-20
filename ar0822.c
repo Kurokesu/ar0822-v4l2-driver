@@ -565,25 +565,6 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 	return ar0822_set_mode(sensor, sensor->cur_mode);
 }
 
-static int ar0822_wakeup(struct ar0822 *sensor)
-{
-	int ret;
-
-	ret = cci_write(sensor->regmap, IMX415_MODE, IMX415_MODE_OPERATING,
-			NULL);
-	if (ret)
-		return ret;
-
-	/*
-	 * According to the datasheet we have to wait at least 63 us after
-	 * leaving standby mode. But this doesn't work even after 30 ms.
-	 * So probably this should be 63 ms and therefore we wait for 80 ms.
-	 */
-	msleep(80);
-
-	return 0;
-}
-
 static int ar0822_mode_stream_on(struct ar0822 *sensor)
 {
 	// int ret;
