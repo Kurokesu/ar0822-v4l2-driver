@@ -574,21 +574,18 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 
 static int ar0822_mode_stream_on(struct ar0822 *sensor)
 {
-	// int ret;
+	dev_dbg(sensor->dev, "%s\n", __func__);
 
-	return -1; // TODO: implement
-	// ret = ar0822_wakeup(sensor);
-	// return cci_write(sensor->regmap, IMX415_XMSTA, IMX415_XMSTA_START,
-	// 		 &ret);
+	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
+			 AR0822_MODE_SELECT_STREAM_ON, NULL);
 }
 
-static int ar0822_stream_off(struct ar0822 *sensor)
+static int ar0822_mode_stream_off(struct ar0822 *sensor)
 {
-	int ret;
+	dev_dbg(sensor->dev, "%s\n", __func__);
 
-	ret = cci_write(sensor->regmap, IMX415_XMSTA, IMX415_XMSTA_STOP, NULL);
-	return cci_write(sensor->regmap, IMX415_MODE, IMX415_MODE_STANDBY,
-			 &ret);
+	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
+			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
 }
 
 static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
@@ -602,7 +599,7 @@ static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
 	state = v4l2_subdev_lock_and_get_active_state(sd);
 
 	if (!enable) {
-		ret = ar0822_stream_off(sensor);
+		ret = ar0822_mode_stream_off(sensor);
 
 		pm_runtime_mark_last_busy(sensor->dev);
 		pm_runtime_put_autosuspend(sensor->dev);
