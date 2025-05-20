@@ -100,6 +100,10 @@ static const char *const ar0822_supply_names[] = {
 
 #define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
 
+static const s64 link_freq_menu_items[] = {
+	480000000,
+};
+
 struct ar0822_clk_params {
 	u64 link_frequency;
 	u64 extclk_frequency;
@@ -397,14 +401,15 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
 
-	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); ++i) {
-		if (lane_rate == link_freq_menu_items[i] * 2)
+	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
+		if (link_frequency == link_freq_menu_items[i])
 			break;
 	}
+
 	if (i == ARRAY_SIZE(link_freq_menu_items)) {
 		return dev_err_probe(sensor->dev, -EINVAL,
-				     "lane rate %llu not supported\n",
-				     lane_rate);
+				     "link frequency %llu not supported\n",
+				     link_frequency);
 	}
 
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0822_ctrl_ops,
