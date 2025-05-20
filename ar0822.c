@@ -540,16 +540,15 @@ static int ar0822_set_mode(struct ar0822 *sensor, int mode)
 		return -EINVAL;
 	}
 
-	cci_multi_reg_write(sensor->regmap, supported_modes[mode].reg_list.regs,
-			    supported_modes[mode].reg_list.num_of_regs, &ret);
-
-	cci_multi_reg_write(sensor->regmap, sensor->clk_params->regs,
-			    IMX415_NUM_CLK_PARAM_REGS, &ret);
-
-	ret = cci_write(sensor->regmap, IMX415_LANEMODE,
-			sensor->num_data_lanes == 2 ? IMX415_LANEMODE_2 :
-						      IMX415_LANEMODE_4,
+	if (ar0822_supported_modes[mode].reg_list.num_of_regs) {
+		ret = cci_multi_reg_write(
+			sensor->regmap,
+			ar0822_supported_modes[mode].reg_list.regs,
+			ar0822_supported_modes[mode].reg_list.num_of_regs,
 			NULL);
+		if (ret)
+			return ret;
+	}
 
 	return ret;
 }
