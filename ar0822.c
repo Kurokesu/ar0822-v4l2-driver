@@ -26,17 +26,42 @@
 
 #define AR0822_EMBEDDED_LINE_WIDTH 16384
 #define AR0822_NUM_EMBEDDED_LINES 2
+
+#define AR0822_VBLANK_MIN 16
+#define AR0822_VTS_MAX 0xFFFF
+#define AR0822_VTS_30FPS 0x4C4
+#define AR0822_EXPOSURE_DEFAULT 0x0640
+#define AR0822_PPL_DEFAULT 3840
+
 #define AR0822_RESET_MIN_DELAY_US 7000
 #define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
 
+#define AR0822_PIXEL_NATIVE_WIDTH 3840
+#define AR0822_PIXEL_NATIVE_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_TOP 0
 #define AR0822_PIXEL_ARRAY_LEFT 0
 
+#define AR0822_PIXEL_ARRAY_VBLANK 2184 // TODO check
+
+#define AR0822_EXPOSURE_MIN 4 // ?
+#define AR0822_EXPOSURE_STEP 1
+
+#define AR0822_ANA_GAIN_MIN 0
+#define AR0822_ANA_GAIN_MAX 232
+#define AR0822_ANA_GAIN_STEP 1
+#define AR0822_ANA_GAIN_DEFAULT 0
+
 #define AR0822_MODEL_ID 0x0F56
 #define AR0822_MODE_LOW_POWER 0x0018
-#define AR0822_MODE_STREAM_ON (AR0822_MODE_LOW_POWER | (1 << 2))
+#define AR0822_MODE_STREAM_ON (AR0822_MODE_LOW_POWER | BIT(2))
+
+#define AR0822_MODE_SELECT_STREAM_OFF 0x00
+#define AR0822_MODE_SELECT_STREAM_ON BIT(0)
+
+#define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
+#define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
 
 #define AR0822_REG_CHIP_VERSION CCI_REG16(0x3000)
 #define AR0822_REG_FRAME_LENGTH_LINES CCI_REG16(0x300A)
@@ -138,19 +163,30 @@ struct ar0822_mode_reg_list {
 
 struct ar0822_mode {
 	u64 link_frequency;
-	u32 hmax_min[2];
-	// struct ar0822_mode_reg_list reg_list;
+	unsigned int width;
+	unsigned int height;
+	struct v4l2_rect crop;
+	/* V-timing */
+	unsigned int vts_def;
+	struct ar0822_mode_reg_list reg_list;
 };
 
-/* mode configs */
-static const struct ar0822_mode supported_modes[] = {
+static const struct ar0822_mode ar0822_supported_modes[] = {
 	{
 		.link_frequency = 480000000,
-		.hmax_min = { 2032, 1066 }, // TODO
-		// .reg_list = {
-		// 	.num_of_regs = ARRAY_SIZE(ar0822_linkrate_720mbps),
-		// 	.regs = ar0822_linkrate_720mbps,
-		// },
+		.width = 1920,
+		.height = 1080,
+		.crop = {
+			.left = AR0822_PIXEL_ARRAY_LEFT,
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.width = 1920,
+			.height = 1080,
+		},
+		.vts_def = AR0822_VTS_30FPS,
+		.reg_list = {
+			.num_of_regs = ARRAY_SIZE(ar0822_link_480mbps),
+			.regs = ar0822_link_480mbps,
+		},
 	},
 };
 
@@ -178,6 +214,8 @@ struct ar0822 {
 	struct gpio_desc *reset;
 	struct regmap *regmap;
 
+	unsigned int fmt_code;
+
 	const struct ar0822_clk_params *clk_params;
 
 	struct v4l2_subdev subdev;
@@ -192,6 +230,9 @@ struct ar0822 {
 
 	unsigned int cur_mode;
 	unsigned int num_data_lanes;
+
+	struct mutex mutex;
+	const struct ar0822_mode *mode;
 };
 
 /*
@@ -300,20 +341,25 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0822 *sensor =
-		container_of(ctrl->handler, struct imx415, ctrls);
+		container_of(ctrl->handler, struct ar0822, ctrls);
 	const struct v4l2_mbus_framefmt *format;
 	struct v4l2_subdev_state *state;
 	u32 exposure_max;
 	unsigned int vmax;
-	unsigned int flip;
 	int ret;
+
+	dev_dbg(sensor->dev, "ar0822_s_ctrl: %d %d\n", ctrl->id, ctrl->val);
 
 	state = v4l2_subdev_get_locked_active_state(&sensor->subdev);
 	format = v4l2_subdev_state_get_format(state, 0);
 
 	if (ctrl->id == V4L2_CID_VBLANK) {
-		exposure_max =
-			format->height + ctrl->val - IMX415_EXPOSURE_OFFSET;
+		dev_dbg(sensor->dev, "ar0822_s_ctrl: VBLANK %d\n", ctrl->val);
+		dev_dbg(sensor->dev, "ar0822_s_ctrl: format height %d\n",
+			format->height);
+		exposure_max = format->height + ctrl->val - AR0822_EXPOSURE_MIN;
+		dev_dbg(sensor->dev, "ar0822_s_ctrl: exposure_max %d\n",
+			exposure_max);
 		__v4l2_ctrl_modify_range(sensor->exposure,
 					 sensor->exposure->minimum,
 					 exposure_max, sensor->exposure->step,
@@ -325,7 +371,9 @@ static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
-		ret = cci_write(sensor->regmap, IMX415_VMAX,
+		dev_dbg(sensor->dev, "ar0822_s_ctrl: VBLANK %d\n",
+			format->height + ctrl->val);
+		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
 				format->height + ctrl->val, NULL);
 		if (ret)
 			return ret;
@@ -338,34 +386,42 @@ static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 		/* clamp the exposure value to VMAX. */
 		vmax = format->height + sensor->vblank->cur.val;
 		ctrl->val = min_t(int, ctrl->val, vmax);
-		ret = cci_write(sensor->regmap, IMX415_SHR0, vmax - ctrl->val,
-				NULL);
+		dev_dbg(sensor->dev,
+			"ar0822_s_ctrl: AR0822_REG_COARSE_INTEGRATION_TIME %d\n",
+			vmax - ctrl->val);
+		ret = cci_write(sensor->regmap,
+				AR0822_REG_COARSE_INTEGRATION_TIME,
+				vmax - ctrl->val, NULL);
 		break;
 
 	case V4L2_CID_ANALOGUE_GAIN:
-		/* analogue gain in 0.3 dB step size */
-		ret = cci_write(sensor->regmap, IMX415_GAIN_PCG_0, ctrl->val,
-				NULL);
+		dev_dbg(sensor->dev,
+			"ar0822_s_ctrl: AR0822_REG_SENSOR_GAIN %d\n",
+			ctrl->val);
+		ret = cci_write(sensor->regmap, AR0822_REG_SENSOR_GAIN,
+				ctrl->val, NULL);
 		break;
 
 	case V4L2_CID_HFLIP:
-	case V4L2_CID_VFLIP:
-		flip = (sensor->hflip->val << IMX415_HREVERSE_SHIFT) |
-		       (sensor->vflip->val << IMX415_VREVERSE_SHIFT);
-		ret = cci_write(sensor->regmap, IMX415_REVERSE, flip, NULL);
+	case V4L2_CID_VFLIP: {
+		u32 flip = (sensor->hflip->val
+			    << AR0822_IMAGE_ORIENTATION_HFLIP_BIT) |
+			   (sensor->vflip->val
+			    << AR0822_IMAGE_ORIENTATION_VFLIP_BIT);
+		dev_dbg(sensor->dev,
+			"ar0822_s_ctrl: AR0822_REG_IMAGE_ORIENTATION %d\n",
+			flip);
+		ret = cci_write(sensor->regmap, AR0822_REG_IMAGE_ORIENTATION,
+				flip, NULL);
 		break;
+	}
 
-	case V4L2_CID_TEST_PATTERN:
-		ret = ar0822_set_testpattern(sensor, ctrl->val);
-		break;
-
-	case V4L2_CID_HBLANK:
-		return cci_write(sensor->regmap, IMX415_HMAX,
-				 (format->width + ctrl->val) /
-					 IMX415_HMAX_MULTIPLIER,
-				 NULL);
+		// case V4L2_CID_TEST_PATTERN:
+		// 	ret = ar0822_set_testpattern(sensor, ctrl->val);
+		// 	break;
 
 	default:
+		dev_err(sensor->dev, "unhandled control %d\n", ctrl->id);
 		ret = -EINVAL;
 		break;
 	}
@@ -383,10 +439,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	u64 lane_rate = supported_modes[sensor->cur_mode].lane_rate;
-	u32 exposure_max = IMX415_PIXEL_ARRAY_HEIGHT +
-			   IMX415_PIXEL_ARRAY_VBLANK - IMX415_EXPOSURE_OFFSET;
-	u32 hblank_min, hblank_max;
+	u64 link_frequency =
+		ar0822_supported_modes[sensor->cur_mode].link_frequency;
+	unsigned int height = sensor->mode->height;
+	u32 exposure_max = AR0822_PIXEL_ARRAY_HEIGHT +
+			   AR0822_PIXEL_ARRAY_VBLANK - AR0822_EXPOSURE_MIN;
+	u32 hblank, exposure_def;
 	unsigned int i;
 	int ret;
 
@@ -415,44 +473,47 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+	exposure_max = sensor->mode->vts_def - 4;
+	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
+			       exposure_max :
+			       AR0822_EXPOSURE_DEFAULT;
 	sensor->exposure = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
-					     V4L2_CID_EXPOSURE, 4, exposure_max,
-					     1, exposure_max);
+					     V4L2_CID_EXPOSURE,
+					     AR0822_EXPOSURE_MIN, exposure_max,
+					     AR0822_EXPOSURE_STEP,
+					     exposure_def);
 
 	v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
-			  V4L2_CID_ANALOGUE_GAIN, IMX415_AGAIN_MIN,
-			  IMX415_AGAIN_MAX, IMX415_AGAIN_STEP,
-			  IMX415_AGAIN_MIN);
+			  V4L2_CID_ANALOGUE_GAIN, AR0822_ANA_GAIN_MIN,
+			  AR0822_ANA_GAIN_MAX, AR0822_ANA_GAIN_STEP,
+			  AR0822_ANA_GAIN_MIN);
 
-	hblank_min = (supported_modes[sensor->cur_mode]
-			      .hmax_min[sensor->num_data_lanes == 2 ? 0 : 1] *
-		      IMX415_HMAX_MULTIPLIER) -
-		     IMX415_PIXEL_ARRAY_WIDTH;
-	hblank_max = (IMX415_HMAX_MAX * IMX415_HMAX_MULTIPLIER) -
-		     IMX415_PIXEL_ARRAY_WIDTH;
+	hblank = AR0822_PPL_DEFAULT - sensor->mode->width;
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
-				 V4L2_CID_HBLANK, hblank_min, hblank_max,
-				 IMX415_HMAX_MULTIPLIER, hblank_min);
+				 V4L2_CID_HBLANK, hblank, hblank, 1, hblank);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	sensor->vblank =
-		v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
-				  V4L2_CID_VBLANK, IMX415_PIXEL_ARRAY_VBLANK,
-				  IMX415_VMAX_MAX - IMX415_PIXEL_ARRAY_HEIGHT,
-				  1, IMX415_PIXEL_ARRAY_VBLANK);
+	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+					   V4L2_CID_VBLANK, AR0822_VBLANK_MIN,
+					   AR0822_VTS_MAX - height, 1,
+					   sensor->mode->vts_def - height);
 
-	v4l2_ctrl_new_std(&sensor->ctrls, NULL, V4L2_CID_PIXEL_RATE,
-			  sensor->pixel_rate, sensor->pixel_rate, 1,
-			  sensor->pixel_rate);
+	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, NULL, V4L2_CID_PIXEL_RATE,
+				 sensor->pixel_rate, sensor->pixel_rate, 1,
+				 sensor->pixel_rate);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
 	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
-	v4l2_ctrl_new_std_menu_items(&sensor->ctrls, &ar0822_ctrl_ops,
-				     V4L2_CID_TEST_PATTERN,
-				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
-				     0, 0, ar0822_test_pattern_menu);
+	// v4l2_ctrl_new_std_menu_items(&sensor->ctrls, &ar0822_ctrl_ops,
+	// 			     V4L2_CID_TEST_PATTERN,
+	// 			     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
+	// 			     0, 0, ar0822_test_pattern_menu);
 
 	v4l2_ctrl_new_fwnode_properties(&sensor->ctrls, &ar0822_ctrl_ops,
 					&props);
@@ -472,7 +533,9 @@ static int ar0822_set_mode(struct ar0822 *sensor, int mode)
 {
 	int ret = 0;
 
-	if (mode >= ARRAY_SIZE(supported_modes)) {
+	dev_dbg(sensor->dev, "%s: setting mode %d\n", __func__, mode);
+
+	if (mode >= ARRAY_SIZE(ar0822_supported_modes)) {
 		dev_err(sensor->dev, "Mode %d not supported\n", mode);
 		return -EINVAL;
 	}
