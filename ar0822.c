@@ -1116,16 +1116,16 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 			continue;
 		}
 
-		for (j = 0; j < ARRAY_SIZE(supported_modes); j++) {
+		for (j = 0; j < ARRAY_SIZE(ar0822_supported_modes); j++) {
 			if (endpoint_config.link_frequencies[i] !=
-			    supported_modes[j].link_frequency)
+			    ar0822_supported_modes[j].link_frequency)
 				continue;
 			sensor->cur_mode = j;
 			dev_dbg(sensor->dev, "set sensor mode %d\n", j);
 			break;
 		}
 
-		if (j < ARRAY_SIZE(supported_modes))
+		if (j < ARRAY_SIZE(ar0822_supported_modes))
 			break;
 	}
 
@@ -1147,7 +1147,8 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		break;
 	}
 
-	link_frequency = supported_modes[sensor->cur_mode].link_frequency;
+	link_frequency =
+		ar0822_supported_modes[sensor->cur_mode].link_frequency;
 	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); i++) {
 		if (link_frequency == ar0822_clk_params[i].link_frequency &&
 		    extclk_frequency == ar0822_clk_params[i].extclk_frequency) {
