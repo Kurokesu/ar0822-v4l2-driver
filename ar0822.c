@@ -912,8 +912,8 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_CROP:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.top = AR0822_PIXEL_ARRAY_TOP;
-		sel->r.left = AR0822_PIXEL_ARRAY_LEFT;
+		sel->r.top = 0;
+		sel->r.left = 0;
 		sel->r.width = AR0822_PIXEL_ARRAY_WIDTH;
 		sel->r.height = AR0822_PIXEL_ARRAY_HEIGHT;
 
