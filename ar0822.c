@@ -531,20 +531,20 @@ static int ar0822_set_mode(struct ar0822 *sensor, int mode)
 
 	dev_dbg(sensor->dev, "%s: setting mode %d\n", __func__, mode);
 
-	if (mode >= ARRAY_SIZE(ar0822_supported_modes)) {
-		dev_err(sensor->dev, "Mode %d not supported\n", mode);
-		return -EINVAL;
-	}
+	// if (mode >= ARRAY_SIZE(ar0822_supported_modes)) {
+	// 	dev_err(sensor->dev, "Mode %d not supported\n", mode);
+	// 	return -EINVAL;
+	// }
 
-	if (ar0822_supported_modes[mode].reg_list.num_of_regs) {
-		ret = cci_multi_reg_write(
-			sensor->regmap,
-			ar0822_supported_modes[mode].reg_list.regs,
-			ar0822_supported_modes[mode].reg_list.num_of_regs,
-			NULL);
-		if (ret)
-			return ret;
-	}
+	// if (ar0822_supported_modes[mode].reg_list.num_of_regs) {
+	// 	ret = cci_multi_reg_write(
+	// 		sensor->regmap,
+	// 		ar0822_supported_modes[mode].reg_list.regs,
+	// 		ar0822_supported_modes[mode].reg_list.num_of_regs,
+	// 		NULL);
+	// 	if (ret)
+	// 		return ret;
+	// }
 
 	return ret;
 }
@@ -555,10 +555,33 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 
 	dev_dbg(sensor->dev, "%s: setting up sensor\n", __func__);
 
+	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_STREAM_ON,
+			NULL);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to set stream on: %d\n", ret);
+		return ret;
+	}
+
+	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
+	usleep_range(2000, 2100);
+
+	/* Set the sensor back to low power mode */
+	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_LOW_POWER,
+			NULL);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to set low power mode: %d\n", ret);
+		return ret;
+	}
+
+	/* wait 16000 EXTCLKs for software standdby */
+	usleep_range(666, 777);
+
 	ret = cci_multi_reg_write(sensor->regmap, ar0822_init_table,
 				  ARRAY_SIZE(ar0822_init_table), NULL);
-	if (ret)
+	if (ret) {
+		dev_err(sensor->dev, "Failed to write init table: %d\n", ret);
 		return ret;
+	}
 
 	return ar0822_set_mode(sensor, sensor->cur_mode);
 }
@@ -677,8 +700,8 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 static const u32 codes[] = {
 	/* 12-bit modes. */
 	MEDIA_BUS_FMT_SGRBG12_1X12,
-	MEDIA_BUS_FMT_SGBRG12_1X12, // TODO: check
-	MEDIA_BUS_FMT_SBGGR12_1X12,
+	MEDIA_BUS_FMT_SGRBG12_1X12, // TODO: check
+	MEDIA_BUS_FMT_SGRBG12_1X12,
 	MEDIA_BUS_FMT_SGRBG12_1X12,
 };
 
