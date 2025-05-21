@@ -659,7 +659,7 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	pr_info("%s\n", __func__);
+	pr_info("%s %d\n", __func__, code->index);
 
 	if (code->index != 0)
 		return -EINVAL;
@@ -681,6 +681,8 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 
 	if (fse->index > 0 || fse->code != format->code)
 		return -EINVAL;
+
+	pr_info("%s %d %d\n", __func__, fse->min_width, fse->min_height);
 
 	fse->min_width = AR0822_PIXEL_ARRAY_WIDTH;
 	fse->max_width = fse->min_width;
