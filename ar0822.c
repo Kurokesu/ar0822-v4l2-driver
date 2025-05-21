@@ -582,6 +582,8 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 		return ret;
 	}
 
+	usleep_range(1000, 1100);
+
 	return ar0822_set_mode(sensor, sensor->cur_mode);
 }
 
