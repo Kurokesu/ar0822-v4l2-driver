@@ -29,9 +29,9 @@
 
 #define AR0822_VBLANK_MIN 16
 #define AR0822_VTS_MAX 0xFFFF
-#define AR0822_VTS_30FPS 0x4C4
+#define AR0822_VTS_30FPS 2184
 #define AR0822_EXPOSURE_DEFAULT 0x0640
-#define AR0822_PPL_DEFAULT 3840
+#define AR0822_PPL_DEFAULT 4884
 
 #define AR0822_RESET_MIN_DELAY_US 7000
 #define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
@@ -40,8 +40,8 @@
 #define AR0822_PIXEL_NATIVE_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
-#define AR0822_PIXEL_ARRAY_TOP 0
-#define AR0822_PIXEL_ARRAY_LEFT 0
+#define AR0822_PIXEL_ARRAY_TOP 8
+#define AR0822_PIXEL_ARRAY_LEFT 8
 
 #define AR0822_PIXEL_ARRAY_VBLANK 2184 // TODO check
 
@@ -174,13 +174,13 @@ struct ar0822_mode {
 static const struct ar0822_mode ar0822_supported_modes[] = {
 	{
 		.link_frequency = 480000000,
-		.width = 1920,
-		.height = 1080,
+		.width = 3840,
+		.height = 2160,
 		.crop = {
-			.left = AR0822_PIXEL_ARRAY_LEFT,
-			.top = AR0822_PIXEL_ARRAY_TOP,
-			.width = 1920,
-			.height = 1080,
+			.left = 0,
+			.top = 0,
+			.width = 3840,
+			.height = 2160,
 		},
 		.vts_def = AR0822_VTS_30FPS,
 		.reg_list = {
@@ -250,12 +250,15 @@ static const struct cci_reg_sequence ar0822_init_table[] = {
 	{ AR0822_REG_PLL_CONTROL, 0x0003 },
 
 	{ AR0822_REG_DIGITAL_TEST, 0x0800 }, // default
-	{ AR0822_REG_X_ADDR_START, 0x03C8 }, // 968
-	{ AR0822_REG_X_ADDR_END, 0x0B47 }, // 2887
+	{ AR0822_REG_X_ADDR_START, 0x0008 }, // 968
+	{ AR0822_REG_X_ADDR_END, 0x0F07 }, // 2887
+	{ AR0822_REG_Y_ADDR_START, 0x0008 }, // 8
+	{ AR0822_REG_Y_ADDR_END, 0x0877 },
+
 	{ AR0822_REG_X_ODD_INC, 0x0001 }, // default no skip
 	{ AR0822_REG_Y_ODD_INC, 0x0001 }, //default no skip
-	{ AR0822_REG_X_OUTPUT_CONTROL, 0x0780 }, // 1920 disabled
-	{ AR0822_REG_Y_OUTPUT_CONTROL, 0x0438 }, // 1080 disabled
+	{ AR0822_REG_X_OUTPUT_CONTROL, 0x0F00 }, // 3840 disabled
+	{ AR0822_REG_Y_OUTPUT_CONTROL, 0x0870 }, // 2160 disabled
 	/* read mode */
 	{ AR0822_REG_DARK_CONTROL, 0x0000 },
 	/* operation mode */
@@ -263,9 +266,9 @@ static const struct cci_reg_sequence ar0822_init_table[] = {
 	{ AR0822_REG_COMPANDING, 0x0000 }, // default
 	{ AR0822_REG_SERIAL_FORMAT, 0x0202 }, // 2 lane MIPI
 	{ AR0822_REG_DATA_FORMAT_BITS, 0x0C0C }, // 12bit / 12bit raw
-	{ AR0822_REG_FRAME_LENGTH_LINES, 0x0450 }, // 1104
-	{ AR0822_REG_LINE_LENGTH_PCK, 0x096E }, // 2414
-	{ AR0822_REG_COARSE_INTEGRATION_TIME, 0x0176 },
+	{ AR0822_REG_FRAME_LENGTH_LINES, 0x0888 }, // 2184
+	{ AR0822_REG_LINE_LENGTH_PCK, 0x1314 }, // 4884
+	{ AR0822_REG_COARSE_INTEGRATION_TIME, 0x00C5 },
 	{ AR0822_REG_COARSE_INTEGRATION_TIME2, 0x0000 },
 	{ AR0822_REG_COARSE_INTEGRATION_TIME3, 0x0000 },
 	{ AR0822_REG_EXPOSURE_RATIO, 0x0022 }, // default
@@ -292,19 +295,6 @@ static const struct cci_reg_sequence ar0822_init_table[] = {
 	{ AR0822_REG_MIPI_F3_VC, 0x0000 },
 	{ AR0822_REG_MIPI_F4_PDT, 0x002C },
 	{ AR0822_REG_MIPI_F4_VC, 0x0000 },
-	// /* use all-pixel readout mode, no flip */
-	// { IMX415_WINMODE, 0x00 },
-	// { IMX415_ADDMODE, 0x00 },
-	// { IMX415_REVERSE, 0x00 },
-	// /* use RAW 10-bit mode */
-	// { IMX415_ADBIT, 0x00 },
-	// { IMX415_MDBIT, 0x00 },
-	// /* output VSYNC on XVS and low on XHS */
-	// { IMX415_OUTSEL, 0x22 },
-	// { IMX415_DRV, 0x00 },
-
-	// /* SONY magic registers */
-	// { CCI_REG8(0x32D4), 0x21 },
 };
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
@@ -795,7 +785,7 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 				 exposure_max, sensor->exposure->step,
 				 exposure_def);
 	/*
-			* Currently PPL is fixed to AR0234_PPL_DEFAULT, so
+			* Currently PPL is fixed to AR0822_PPL_DEFAULT, so
 			* hblank depends on mode->width only, and is not
 			* changeble in any way other than changing the mode.
 			*/
@@ -870,23 +860,7 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_selection *sel)
 {
 	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP: {
-		struct ar0822 *sensor = to_ar0822(sd);
-
-		mutex_lock(&sensor->mutex);
-		sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
-						sel->which);
-		mutex_unlock(&sensor->mutex);
-
-		return 0;
-	}
-	case V4L2_SEL_TGT_NATIVE_SIZE:
-		sel->r.top = 0;
-		sel->r.left = 0;
-		sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
-		sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
-
-		return 0;
+	case V4L2_SEL_TGT_CROP:
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 		sel->r.top = AR0822_PIXEL_ARRAY_TOP;
@@ -898,6 +872,36 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	}
 
 	return -EINVAL;
+
+	// switch (sel->target) {
+	// case V4L2_SEL_TGT_CROP: {
+	// 	struct ar0822 *sensor = to_ar0822(sd);
+
+	// 	mutex_lock(&sensor->mutex);
+	// 	sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
+	// 					sel->which);
+	// 	mutex_unlock(&sensor->mutex);
+
+	// 	return 0;
+	// }
+	// case V4L2_SEL_TGT_NATIVE_SIZE:
+	// 	sel->r.top = 0;
+	// 	sel->r.left = 0;
+	// 	sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
+	// 	sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
+
+	// 	return 0;
+	// case V4L2_SEL_TGT_CROP_DEFAULT:
+	// case V4L2_SEL_TGT_CROP_BOUNDS:
+	// 	sel->r.top = 0;
+	// 	sel->r.left = 0;
+	// 	sel->r.width = AR0822_PIXEL_ARRAY_WIDTH;
+	// 	sel->r.height = AR0822_PIXEL_ARRAY_HEIGHT;
+
+	// 	return 0;
+	// }
+
+	// return -EINVAL;
 }
 
 static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
@@ -917,6 +921,25 @@ static const struct v4l2_subdev_ops ar0822_subdev_ops = {
 	.pad = &ar0822_subdev_pad_ops,
 };
 
+static int ar0822_init_state(struct v4l2_subdev *sd,
+			     struct v4l2_subdev_state *state)
+{
+	struct v4l2_subdev_format format = {
+		.format = {
+			.width = AR0822_PIXEL_ARRAY_WIDTH,
+			.height = AR0822_PIXEL_ARRAY_HEIGHT,
+		},
+	};
+
+	ar0822_set_pad_format(sd, state, &format);
+
+	return 0;
+}
+
+static const struct v4l2_subdev_internal_ops ar0822_internal_ops = {
+	.init_state = ar0822_init_state,
+};
+
 static int ar0822_subdev_init(struct ar0822 *sensor)
 {
 	struct i2c_client *client = to_i2c_client(sensor->dev);
@@ -925,6 +948,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	dev_dbg(sensor->dev, "%s\n", __func__);
 
 	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
+	sensor->subdev.internal_ops = &ar0822_internal_ops;
 
 	ret = ar0822_ctrls_init(sensor);
 	if (ret)
