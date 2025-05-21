@@ -25,7 +25,7 @@
 #define AR0822_REG_ADDRESS_BITS 16
 
 #define AR0822_EMBEDDED_LINE_WIDTH 16384
-#define AR0822_NUM_EMBEDDED_LINES 2
+#define AR0822_NUM_EMBEDDED_LINES 0
 
 #define AR0822_VBLANK_MIN 16
 #define AR0822_VTS_MAX 0xFFFF
@@ -732,7 +732,6 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	int ret;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -755,12 +754,12 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 			fmt->format.code = ar0822_get_format_code(
 				sensor, sensor->fmt_code);
 		} else {
-			ar0822_update_metadata_pad_format(fmt);
+			// ar0822_update_metadata_pad_format(fmt);
 		}
 	}
 	mutex_unlock(&sensor->mutex);
 
-	return ret;
+	return 0;
 }
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
@@ -798,47 +797,70 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	const struct ar0822_mode *mode;
-	struct v4l2_mbus_framefmt *framefmt;
+	struct v4l2_mbus_framefmt *format;
 
-	if (fmt->pad >= NUM_PADS)
-		return -EINVAL;
+	format = v4l2_subdev_state_get_format(state, fmt->pad);
 
-	mutex_lock(&sensor->mutex);
+	format->width = fmt->format.width;
+	format->height = fmt->format.height;
+	format->code = MEDIA_BUS_FMT_SGRBG12_1X12;
+	format->field = V4L2_FIELD_NONE;
+	format->colorspace = V4L2_COLORSPACE_SRGB;
+	format->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(format->colorspace);
+	format->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(
+		true, format->colorspace, format->ycbcr_enc);
+	;
+	format->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(format->colorspace);
 
-	if (fmt->pad == IMAGE_PAD) {
-		fmt->format.code =
-			ar0822_get_format_code(sensor, fmt->format.code);
+	fmt->format = *format;
 
-		mode = v4l2_find_nearest_size(
-			ar0822_supported_modes,
-			ARRAY_SIZE(ar0822_supported_modes), width, height,
-			fmt->format.width, fmt->format.height);
-		ar0822_update_image_pad_format(sensor, mode, fmt);
-		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt =
-				v4l2_subdev_state_get_format(state, fmt->pad);
-			*framefmt = fmt->format;
-		} else if (sensor->mode != mode ||
-			   sensor->fmt_code != fmt->format.code) {
-			sensor->mode = mode;
-			sensor->fmt_code = fmt->format.code;
-			ar0822_set_framing_limits(sensor);
-		}
-	} else {
-		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt =
-				v4l2_subdev_state_get_format(state, fmt->pad);
-			*framefmt = fmt->format;
-		} else {
-			/* Only one embedded data mode is supported */
-			ar0822_update_metadata_pad_format(fmt);
-		}
-	}
-
-	mutex_unlock(&sensor->mutex);
+	dev_dbg(sensor->dev, "%s: %d %d %d %d\n", __func__, fmt->pad,
+		fmt->format.width, fmt->format.height, fmt->format.code);
 
 	return 0;
+
+	// struct ar0822 *sensor = to_ar0822(sd);
+	// const struct ar0822_mode *mode;
+	// struct v4l2_mbus_framefmt *framefmt;
+
+	// if (fmt->pad >= 1)
+	// 	return -EINVAL;
+
+	// mutex_lock(&sensor->mutex);
+
+	// if (fmt->pad == IMAGE_PAD) {
+	// 	fmt->format.code =
+	// 		ar0822_get_format_code(sensor, fmt->format.code);
+
+	// 	mode = v4l2_find_nearest_size(
+	// 		ar0822_supported_modes,
+	// 		ARRAY_SIZE(ar0822_supported_modes), width, height,
+	// 		fmt->format.width, fmt->format.height);
+	// 	ar0822_update_image_pad_format(sensor, mode, fmt);
+	// 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+	// 		framefmt =
+	// 			v4l2_subdev_state_get_format(state, fmt->pad);
+	// 		*framefmt = fmt->format;
+	// 	} else if (sensor->mode != mode ||
+	// 		   sensor->fmt_code != fmt->format.code) {
+	// 		sensor->mode = mode;
+	// 		sensor->fmt_code = fmt->format.code;
+	// 		ar0822_set_framing_limits(sensor);
+	// 	}
+	// } else {
+	// 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+	// 		framefmt =
+	// 			v4l2_subdev_state_get_format(state, fmt->pad);
+	// 		*framefmt = fmt->format;
+	// 	} else {
+	// 		/* Only one embedded data mode is supported */
+	// 		ar0822_update_metadata_pad_format(fmt);
+	// 	}
+	// }
+
+	// mutex_unlock(&sensor->mutex);
+
+	// return 0;
 }
 
 static const struct v4l2_rect *
@@ -911,7 +933,7 @@ static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
 static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
-	.get_fmt = ar0822_get_pad_format,
+	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = ar0822_set_pad_format,
 	.get_selection = ar0822_get_selection,
 };
