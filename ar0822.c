@@ -571,8 +571,8 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 		return ret;
 	}
 
-	/* wait 16000 EXTCLKs for software standdby */
-	usleep_range(666, 777);
+	/* wait 160000 EXTCLKs for software standdby */
+	usleep_range(7000, 8000);
 
 	ret = cci_multi_reg_write(sensor->regmap, ar0822_init_table,
 				  ARRAY_SIZE(ar0822_init_table), NULL);
