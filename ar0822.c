@@ -132,7 +132,7 @@ static const char *const ar0822_supply_names[] = {
 #define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
 
 static const s64 link_freq_menu_items[] = {
-	480000000,
+	960000000,
 };
 
 struct ar0822_clk_params {
@@ -143,7 +143,7 @@ struct ar0822_clk_params {
 /* EXTCLK Settings - includes all lane rate and EXTCLK dependent registers */
 static const struct ar0822_clk_params ar0822_clk_params[] = {
 	{
-		.link_frequency = 480000000UL,
+		.link_frequency = 960000000UL,
 		.extclk_frequency = 24000000,
 	},
 };
@@ -174,7 +174,7 @@ struct ar0822_mode {
 
 static const struct ar0822_mode ar0822_supported_modes[] = {
 	{
-		.link_frequency = 480000000,
+		.link_frequency = 960000000,
 		.width = 3840,
 		.height = 2160,
 		.crop = {
