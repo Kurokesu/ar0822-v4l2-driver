@@ -131,19 +131,25 @@ static const char *const ar0822_supply_names[] = {
 
 #define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
 
-static const s64 link_freq_menu_items[] = {
-	960000000,
+typedef enum {
+	AR0822_LINK_FREQ_ID_960MHZ = 0,
+} ar0822_link_freq_id_t;
+
+static const s64 ar0822_link_frequencies[] = {
+	[AR0822_LINK_FREQ_ID_960MHZ] = 960000000,
 };
 
-struct ar0822_clk_params {
-	u64 link_frequency;
+struct ar0822_pll_config {
+	ar0822_link_freq_id_t link_frequency_id;
 	u64 extclk_frequency;
 };
 
+#define AR0822_LINK_FREQ_ID_TO_FREQ(id) (ar0822_link_frequencies[id])
+
 /* EXTCLK Settings - includes all lane rate and EXTCLK dependent registers */
-static const struct ar0822_clk_params ar0822_clk_params[] = {
+static const struct ar0822_pll_config ar0822_pll_config[] = {
 	{
-		.link_frequency = 960000000UL,
+		.link_frequency_id = AR0822_LINK_FREQ_ID_960MHZ,
 		.extclk_frequency = 24000000,
 	},
 };
@@ -217,7 +223,7 @@ struct ar0822 {
 
 	unsigned int fmt_code;
 
-	const struct ar0822_clk_params *clk_params;
+	const struct ar0822_pll_config *pll_config;
 
 	struct v4l2_subdev subdev;
 	struct media_pad pad;
@@ -446,12 +452,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
 
-	for (i = 0; i < ARRAY_SIZE(link_freq_menu_items); i++) {
-		if (link_frequency == link_freq_menu_items[i])
+	for (i = 0; i < ARRAY_SIZE(ar0822_link_frequencies); i++) {
+		if (link_frequency == ar0822_link_frequencies[i])
 			break;
 	}
 
-	if (i == ARRAY_SIZE(link_freq_menu_items)) {
+	if (i == ARRAY_SIZE(ar0822_link_frequencies)) {
 		return dev_err_probe(sensor->dev, -EINVAL,
 				     "link frequency %llu not supported\n",
 				     link_frequency);
@@ -461,8 +467,8 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
-				      ARRAY_SIZE(link_freq_menu_items) - 1, i,
-				      link_freq_menu_items);
+				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
+				      i, ar0822_link_frequencies);
 
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -1086,15 +1092,19 @@ static int ar0822_check_extclk(unsigned long extclk_frequency,
 			       u64 link_frequency)
 {
 	unsigned int i;
+	u64 config_link_freq;
 
 	// TODO: optimize
-	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); i++) {
-		if ((ar0822_clk_params[i].link_frequency == link_frequency) &&
-		    ar0822_clk_params[i].extclk_frequency == extclk_frequency)
+	for (i = 0; i < ARRAY_SIZE(ar0822_pll_config); i++) {
+		config_link_freq = AR0822_LINK_FREQ_ID_TO_FREQ(
+			ar0822_pll_config[i].link_frequency_id);
+
+		if ((config_link_freq == link_frequency) &&
+		    ar0822_pll_config[i].extclk_frequency == extclk_frequency)
 			break;
 	}
 
-	if (i == ARRAY_SIZE(ar0822_clk_params))
+	if (i == ARRAY_SIZE(ar0822_pll_config))
 		return -EINVAL;
 
 	return 0;
@@ -1173,11 +1183,12 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	/*
 	 * Check if there exists a sensor mode defined for current EXTCLK,
-	 * number of lanes and given lane rates.
+	 * number of lanes and given lane rate.
 	 */
 	extclk_frequency = clk_get_rate(sensor->extclk);
-	dev_dbg(sensor->dev, "EXTCLK frequency: %lu Hz, number of lanes: %d\n",
-		extclk_frequency, sensor->num_data_lanes);
+
+	dev_dbg(sensor->dev, "link frequency0: %llu Hz\n",
+		endpoint_config.link_frequencies[0]);
 
 	for (i = 0; i < endpoint_config.nr_of_link_frequencies; i++) {
 		if (ar0822_check_extclk(extclk_frequency,
@@ -1221,14 +1232,17 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	link_frequency =
 		ar0822_supported_modes[sensor->cur_mode].link_frequency;
-	for (i = 0; i < ARRAY_SIZE(ar0822_clk_params); i++) {
-		if (link_frequency == ar0822_clk_params[i].link_frequency &&
-		    extclk_frequency == ar0822_clk_params[i].extclk_frequency) {
-			sensor->clk_params = &ar0822_clk_params[i];
+	for (i = 0; i < ARRAY_SIZE(ar0822_pll_config); i++) {
+		u64 config_link_freq = AR0822_LINK_FREQ_ID_TO_FREQ(
+			ar0822_pll_config[i].link_frequency_id);
+
+		if (link_frequency == config_link_freq &&
+		    extclk_frequency == ar0822_pll_config[i].extclk_frequency) {
+			sensor->pll_config = &ar0822_pll_config[i];
 			break;
 		}
 	}
-	if (i == ARRAY_SIZE(ar0822_clk_params)) {
+	if (i == ARRAY_SIZE(ar0822_pll_config)) {
 		ret = dev_err_probe(sensor->dev, -EINVAL,
 				    "Mode %d not supported\n",
 				    sensor->cur_mode);
