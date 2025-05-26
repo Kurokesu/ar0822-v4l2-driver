@@ -181,26 +181,25 @@ static const ar0822_pll_config_t ar0822_pll_configs[] = {
 };
 
 struct ar0822_mode {
-	u64 link_frequency;
 	unsigned int width;
 	unsigned int height;
+	unsigned int line_length_pck;
+	unsigned int frame_length_lines;
 	struct v4l2_rect crop;
-	/* V-timing */
-	unsigned int vts_def;
 };
 
-static const struct ar0822_mode ar0822_supported_modes[] = {
+static const struct ar0822_mode ar0822_modes[] = {
 	{
-		.link_frequency = 960000000,
 		.width = 3840,
 		.height = 2160,
+		.line_length_pck = 14652,
+		.frame_length_lines = 2184,
 		.crop = {
 			.left = 0,
 			.top = 0,
 			.width = 3840,
 			.height = 2160,
 		},
-		.vts_def = AR0822_VTS_30FPS,
 	},
 };
 
@@ -449,7 +448,6 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	u32 exposure_max = AR0822_PIXEL_ARRAY_HEIGHT +
 			   AR0822_PIXEL_ARRAY_VBLANK - AR0822_EXPOSURE_MIN;
 	u32 hblank, exposure_def;
-	unsigned int i;
 	int ret;
 
 	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
@@ -467,7 +465,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	exposure_max = sensor->mode->vts_def - 4;
+	exposure_max = sensor->mode->frame_length_lines - 4;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
 			       AR0822_EXPOSURE_DEFAULT;
@@ -490,8 +488,8 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
 					   V4L2_CID_VBLANK, AR0822_VBLANK_MIN,
-					   AR0822_VTS_MAX - height, 1,
-					   sensor->mode->vts_def - height);
+					   sensor->mode->frame_length_lines - height, 1,
+					   sensor->mode->frame_length_lines - height);
 
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, NULL, V4L2_CID_PIXEL_RATE,
 				 sensor->hw_config.p_pll_config->pixel_rate,
@@ -699,7 +697,7 @@ static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
 static void ar0822_set_default_format(struct ar0822 *sensor)
 {
 	/* Set default mode to max resolution */
-	sensor->mode = &ar0822_supported_modes[0];
+	sensor->mode = &ar0822_modes[0];
 	sensor->fmt_code = MEDIA_BUS_FMT_SGRBG12_1X12;
 }
 
@@ -772,14 +770,14 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 
 	/* Update limits and set FPS to default */
 	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
-				 AR0822_VTS_MAX - mode->height, 1,
-				 mode->vts_def - mode->height);
-	__v4l2_ctrl_s_ctrl(sensor->vblank, mode->vts_def - mode->height);
+				 mode->frame_length_lines - mode->height, 1,
+				 mode->frame_length_lines - mode->height);
+	__v4l2_ctrl_s_ctrl(sensor->vblank, mode->frame_length_lines - mode->height);
 	/*
 			* Update max exposure while meeting
 			* expected vblanking
 			*/
-	exposure_max = mode->vts_def - 4;
+	exposure_max = mode->frame_length_lines - 4;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
 			       AR0822_EXPOSURE_DEFAULT;
@@ -836,8 +834,8 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 	// 		ar0822_get_format_code(sensor, fmt->format.code);
 
 	// 	mode = v4l2_find_nearest_size(
-	// 		ar0822_supported_modes,
-	// 		ARRAY_SIZE(ar0822_supported_modes), width, height,
+	// 		ar0822_modes,
+	// 		ARRAY_SIZE(ar0822_modes), width, height,
 	// 		fmt->format.width, fmt->format.height);
 	// 	ar0822_update_image_pad_format(sensor, mode, fmt);
 	// 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
