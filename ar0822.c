@@ -132,40 +132,52 @@ static const char *const ar0822_supply_names[] = {
 #define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
 
 typedef enum {
-	AR0822_LINK_FREQ_ID_960MHZ = 0,
-} ar0822_link_freq_id_t;
+	AR0822_EXTCLK_LINK_ID_24_480 = 0,
+	AR0822_EXTCLK_LINK_ID_24_960,
+} ar0822_extclk_link_id_t;
 
-static const s64 ar0822_link_frequencies[] = {
-	[AR0822_LINK_FREQ_ID_960MHZ] = 960000000,
-};
+#define EXTCLK_LINK_FREQ_LIST(X) \
+	X(24, 480)               \
+	X(24, 960)
 
-struct ar0822_pll_config {
-	ar0822_link_freq_id_t link_frequency_id;
-	u64 extclk_frequency;
-};
+#define TO_FREQ_EXTCLK(EXTCLK_MHZ, LINK_MHZ)                \
+	[AR0822_EXTCLK_LINK_ID_##EXTCLK_MHZ##_##LINK_MHZ] = \
+		EXTCLK_MHZ * 1000000ULL,
 
-#define AR0822_LINK_FREQ_ID_TO_FREQ(id) (ar0822_link_frequencies[id])
+#define TO_FREQ_LINK(EXTCLK_MHZ, LINK_MHZ)                  \
+	[AR0822_EXTCLK_LINK_ID_##EXTCLK_MHZ##_##LINK_MHZ] = \
+		LINK_MHZ * 1000000ULL,
 
-/* EXTCLK Settings - includes all lane rate and EXTCLK dependent registers */
-static const struct ar0822_pll_config ar0822_pll_config[] = {
+static const u64 ar0822_extclk_frequencies[] = { EXTCLK_LINK_FREQ_LIST(
+	TO_FREQ_EXTCLK) };
+
+static const s64 ar0822_link_frequencies[] = { EXTCLK_LINK_FREQ_LIST(
+	TO_FREQ_LINK) };
+
+typedef struct {
+	s64 const *p_link_freq;
+	u64 const *p_extclk_freq;
+	unsigned long pixel_rate;
+	struct cci_reg_sequence regs;
+} ar0822_pll_config_t;
+
+static const ar0822_pll_config_t ar0822_pll_configs[] = {
 	{
-		.link_frequency_id = AR0822_LINK_FREQ_ID_960MHZ,
-		.extclk_frequency = 24000000,
+		.p_link_freq =
+			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
+		.p_extclk_freq =
+			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
+		.pixel_rate = AR0822_PIXEL_RATE,
+		.regs = {},
 	},
-};
-
-/* Example mode register list (replace with actual values for your mode) */
-static const struct cci_reg_sequence ar0822_link_480mbps[] = {
-	// TODO: Fill with actual mode registers for 1920x1080@30fps, 2-lane, 480Mbps
-	// { AR0822_REG_X_ADDR_START, 0x0000 },
-	// { AR0822_REG_X_ADDR_END,   0x077F }, // 1920 width
-	// { AR0822_REG_Y_ADDR_START, 0x0000 },
-	// { AR0822_REG_Y_ADDR_END,   0x0437 }, // 1080 height
-};
-
-struct ar0822_mode_reg_list {
-	u32 num_of_regs;
-	const struct cci_reg_sequence *regs;
+	{
+		.p_link_freq =
+			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
+		.p_extclk_freq =
+			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
+		.pixel_rate = AR0822_PIXEL_RATE,
+		.regs = {},
+	},
 };
 
 struct ar0822_mode {
@@ -175,7 +187,6 @@ struct ar0822_mode {
 	struct v4l2_rect crop;
 	/* V-timing */
 	unsigned int vts_def;
-	struct ar0822_mode_reg_list reg_list;
 };
 
 static const struct ar0822_mode ar0822_supported_modes[] = {
@@ -190,10 +201,6 @@ static const struct ar0822_mode ar0822_supported_modes[] = {
 			.height = 2160,
 		},
 		.vts_def = AR0822_VTS_30FPS,
-		.reg_list = {
-			.num_of_regs = ARRAY_SIZE(ar0822_link_480mbps),
-			.regs = ar0822_link_480mbps,
-		},
 	},
 };
 
@@ -213,17 +220,21 @@ static const char *const ar0822_test_pattern_menu[] = {
 	"vertical color bar",
 };
 
+typedef struct {
+	struct clk *extclk;
+	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
+	struct gpio_desc *gpio_reset;
+	const ar0822_pll_config_t *p_pll_config;
+	unsigned int num_data_lanes;
+} ar0822_hw_config_t;
+
 struct ar0822 {
 	struct device *dev;
-	struct clk *extclk;
-	unsigned long pixel_rate;
-	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
-	struct gpio_desc *reset;
+	ar0822_hw_config_t hw_config;
+
 	struct regmap *regmap;
 
 	unsigned int fmt_code;
-
-	const struct ar0822_pll_config *pll_config;
 
 	struct v4l2_subdev subdev;
 	struct media_pad pad;
@@ -234,9 +245,6 @@ struct ar0822 {
 	struct v4l2_ctrl *hflip;
 	struct v4l2_ctrl *vflip;
 	struct v4l2_ctrl *exposure;
-
-	unsigned int cur_mode;
-	unsigned int num_data_lanes;
 
 	struct mutex mutex;
 	const struct ar0822_mode *mode;
@@ -433,12 +441,10 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	dev_dbg(sensor->dev, "initializing controls\n");
-	dev_dbg(sensor->dev, "current mode: %d\n", sensor->cur_mode);
 
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	u64 link_frequency =
-		ar0822_supported_modes[sensor->cur_mode].link_frequency;
+	s64 const *p_link_freq = sensor->hw_config.p_pll_config->p_link_freq;
 	unsigned int height = sensor->mode->height;
 	u32 exposure_max = AR0822_PIXEL_ARRAY_HEIGHT +
 			   AR0822_PIXEL_ARRAY_VBLANK - AR0822_EXPOSURE_MIN;
@@ -452,23 +458,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
 
-	for (i = 0; i < ARRAY_SIZE(ar0822_link_frequencies); i++) {
-		if (link_frequency == ar0822_link_frequencies[i])
-			break;
-	}
-
-	if (i == ARRAY_SIZE(ar0822_link_frequencies)) {
-		return dev_err_probe(sensor->dev, -EINVAL,
-				     "link frequency %llu not supported\n",
-				     link_frequency);
-	}
-
-	dev_dbg(sensor->dev, "link frequency: %llu\n", link_frequency);
-
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
-				      i, ar0822_link_frequencies);
+				      p_link_freq - ar0822_link_frequencies,
+				      ar0822_link_frequencies);
 
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
@@ -500,8 +494,9 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 					   sensor->mode->vts_def - height);
 
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, NULL, V4L2_CID_PIXEL_RATE,
-				 sensor->pixel_rate, sensor->pixel_rate, 1,
-				 sensor->pixel_rate);
+				 sensor->hw_config.p_pll_config->pixel_rate,
+				 sensor->hw_config.p_pll_config->pixel_rate, 1,
+				 sensor->hw_config.p_pll_config->pixel_rate);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -527,30 +522,6 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	sensor->subdev.ctrl_handler = &sensor->ctrls;
 
 	return 0;
-}
-
-static int ar0822_set_mode(struct ar0822 *sensor, int mode)
-{
-	int ret = 0;
-
-	dev_dbg(sensor->dev, "%s: setting mode %d\n", __func__, mode);
-
-	// if (mode >= ARRAY_SIZE(ar0822_supported_modes)) {
-	// 	dev_err(sensor->dev, "Mode %d not supported\n", mode);
-	// 	return -EINVAL;
-	// }
-
-	// if (ar0822_supported_modes[mode].reg_list.num_of_regs) {
-	// 	ret = cci_multi_reg_write(
-	// 		sensor->regmap,
-	// 		ar0822_supported_modes[mode].reg_list.regs,
-	// 		ar0822_supported_modes[mode].reg_list.num_of_regs,
-	// 		NULL);
-	// 	if (ret)
-	// 		return ret;
-	// }
-
-	return ret;
 }
 
 static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
@@ -589,7 +560,7 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 
 	usleep_range(1000, 1100);
 
-	return ar0822_set_mode(sensor, sensor->cur_mode);
+	return ret;
 }
 
 static int ar0822_mode_stream_on(struct ar0822 *sensor)
@@ -1033,18 +1004,20 @@ static void ar0822_subdev_cleanup(struct ar0822 *sensor)
 static int ar0822_power_on(struct ar0822 *sensor)
 {
 	int ret;
+	ar0822_hw_config_t *p_hw_config = &sensor->hw_config;
 
 	dev_dbg(sensor->dev, "%s\n", __func__);
 
-	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
+	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT,
+				    p_hw_config->supplies);
 	if (ret < 0)
 		return ret;
 
-	ret = clk_prepare_enable(sensor->extclk);
+	ret = clk_prepare_enable(p_hw_config->extclk);
 	if (ret < 0)
 		goto err_reset;
 
-	gpiod_set_value_cansleep(sensor->reset, 1);
+	gpiod_set_value_cansleep(p_hw_config->gpio_reset, 1);
 
 	usleep_range(AR0822_RESET_MIN_DELAY_US,
 		     AR0822_RESET_MAX_DELAY_US); // TODO this can be reduced
@@ -1052,17 +1025,18 @@ static int ar0822_power_on(struct ar0822 *sensor)
 	return 0;
 
 err_reset:
-	gpiod_set_value_cansleep(sensor->reset, 0);
-	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
+	gpiod_set_value_cansleep(p_hw_config->gpio_reset, 0);
+	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, p_hw_config->supplies);
 	return ret;
 }
 
 static void ar0822_power_off(struct ar0822 *sensor)
 {
 	dev_dbg(sensor->dev, "%s\n", __func__);
-	clk_disable_unprepare(sensor->extclk);
-	gpiod_set_value_cansleep(sensor->reset, 0);
-	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, sensor->supplies);
+	clk_disable_unprepare(sensor->hw_config.extclk);
+	gpiod_set_value_cansleep(sensor->hw_config.gpio_reset, 0);
+	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT,
+			       sensor->hw_config.supplies);
 }
 
 static int ar0822_identify_model(struct ar0822 *sensor)
@@ -1088,62 +1062,41 @@ static int ar0822_identify_model(struct ar0822 *sensor)
 	return ret;
 }
 
-static int ar0822_check_extclk(unsigned long extclk_frequency,
-			       u64 link_frequency)
-{
-	unsigned int i;
-	u64 config_link_freq;
-
-	// TODO: optimize
-	for (i = 0; i < ARRAY_SIZE(ar0822_pll_config); i++) {
-		config_link_freq = AR0822_LINK_FREQ_ID_TO_FREQ(
-			ar0822_pll_config[i].link_frequency_id);
-
-		if ((config_link_freq == link_frequency) &&
-		    ar0822_pll_config[i].extclk_frequency == extclk_frequency)
-			break;
-	}
-
-	if (i == ARRAY_SIZE(ar0822_pll_config))
-		return -EINVAL;
-
-	return 0;
-}
-
 static int ar0822_parse_hw_config(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_endpoint endpoint_config = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
 	struct fwnode_handle *endpoint;
-	u64 link_frequency;
+	ar0822_hw_config_t *p_hw_config = &sensor->hw_config;
 	unsigned long extclk_frequency;
-	unsigned int i, j;
+	unsigned int i;
 	int ret;
 
 	dev_dbg(sensor->dev, "parsing hardware configuration\n");
 
 	// Get the regulators
 	for (i = 0; i < AR0822_SUPPLY_AMOUNT; i++)
-		sensor->supplies[i].supply = ar0822_supply_names[i];
+		p_hw_config->supplies[i].supply = ar0822_supply_names[i];
 
 	ret = devm_regulator_bulk_get(sensor->dev, AR0822_SUPPLY_AMOUNT,
-				      sensor->supplies);
+				      p_hw_config->supplies);
 	if (ret)
 		return dev_err_probe(sensor->dev, ret,
 				     "failed to get supplies\n");
 
 	// Get the reset GPIO
-	sensor->reset =
+	p_hw_config->gpio_reset =
 		devm_gpiod_get_optional(sensor->dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(sensor->reset))
-		return dev_err_probe(sensor->dev, PTR_ERR(sensor->reset),
+	if (IS_ERR(p_hw_config->gpio_reset))
+		return dev_err_probe(sensor->dev,
+				     PTR_ERR(p_hw_config->gpio_reset),
 				     "failed to get reset GPIO\n");
 
 	// Get EXTCLK
-	sensor->extclk = devm_clk_get(sensor->dev, "extclk");
-	if (IS_ERR(sensor->extclk))
-		return dev_err_probe(sensor->dev, PTR_ERR(sensor->extclk),
+	p_hw_config->extclk = devm_clk_get(sensor->dev, "extclk");
+	if (IS_ERR(p_hw_config->extclk))
+		return dev_err_probe(sensor->dev, PTR_ERR(p_hw_config->extclk),
 				     "failed to get EXTCLK\n");
 
 	endpoint =
@@ -1164,7 +1117,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
 	case 2:
 	case 4:
-		sensor->num_data_lanes =
+		p_hw_config->num_data_lanes =
 			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	default:
@@ -1185,74 +1138,31 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	 * Check if there exists a sensor mode defined for current EXTCLK,
 	 * number of lanes and given lane rate.
 	 */
-	extclk_frequency = clk_get_rate(sensor->extclk);
+	extclk_frequency = clk_get_rate(p_hw_config->extclk);
 
-	dev_dbg(sensor->dev, "link frequency0: %llu Hz\n",
-		endpoint_config.link_frequencies[0]);
-
-	for (i = 0; i < endpoint_config.nr_of_link_frequencies; i++) {
-		if (ar0822_check_extclk(extclk_frequency,
-					endpoint_config.link_frequencies[i])) {
-			dev_dbg(sensor->dev,
-				"EXTCLK %lu Hz not supported for this link freq",
-				extclk_frequency);
-			continue;
-		}
-
-		for (j = 0; j < ARRAY_SIZE(ar0822_supported_modes); j++) {
-			if (endpoint_config.link_frequencies[i] !=
-			    ar0822_supported_modes[j].link_frequency)
-				continue;
-			sensor->cur_mode = j;
-			dev_dbg(sensor->dev, "set sensor mode %d\n", j);
-			break;
-		}
-
-		if (j < ARRAY_SIZE(ar0822_supported_modes))
+	for (i = 0; i < ARRAY_SIZE(ar0822_pll_configs); i++) {
+		if ((*ar0822_pll_configs[i].p_extclk_freq ==
+		     extclk_frequency) &&
+		    (*ar0822_pll_configs[i].p_link_freq ==
+		     endpoint_config.link_frequencies[0]))
 			break;
 	}
 
-	if (i == endpoint_config.nr_of_link_frequencies) {
-		ret = dev_err_probe(sensor->dev, -EINVAL,
-				    "no valid sensor mode defined\n");
+	if (i == ARRAY_SIZE(ar0822_pll_configs)) {
+		ret = dev_err_probe(
+			sensor->dev, -EINVAL,
+			"no valid sensor mode defined for EXTCLK %lu Hz and link frequency %llu bps\n",
+			extclk_frequency, endpoint_config.link_frequencies[0]);
 		goto done_endpoint_free;
 	}
 
-	switch (extclk_frequency) {
-	// case 27000000:
-	// case 37125000:
-	// case 74250000:
-	// 	sensor->pixel_rate = IMX415_PIXEL_RATE_74_25MHZ;
-	// 	break;
-	case 24000000:
-		// case 72000000:
-		sensor->pixel_rate = AR0822_PIXEL_RATE;
-		break;
-	}
-
-	link_frequency =
-		ar0822_supported_modes[sensor->cur_mode].link_frequency;
-	for (i = 0; i < ARRAY_SIZE(ar0822_pll_config); i++) {
-		u64 config_link_freq = AR0822_LINK_FREQ_ID_TO_FREQ(
-			ar0822_pll_config[i].link_frequency_id);
-
-		if (link_frequency == config_link_freq &&
-		    extclk_frequency == ar0822_pll_config[i].extclk_frequency) {
-			sensor->pll_config = &ar0822_pll_config[i];
-			break;
-		}
-	}
-	if (i == ARRAY_SIZE(ar0822_pll_config)) {
-		ret = dev_err_probe(sensor->dev, -EINVAL,
-				    "Mode %d not supported\n",
-				    sensor->cur_mode);
-		goto done_endpoint_free;
-	}
+	p_hw_config->p_pll_config = &ar0822_pll_configs[i];
 
 	ret = 0;
 	dev_dbg(sensor->dev,
 		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
-		extclk_frequency, link_frequency, sensor->num_data_lanes);
+		extclk_frequency, *p_hw_config->p_pll_config->p_link_freq,
+		p_hw_config->num_data_lanes);
 
 done_endpoint_free:
 	v4l2_fwnode_endpoint_free(&endpoint_config);
