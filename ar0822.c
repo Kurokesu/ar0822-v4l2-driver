@@ -973,6 +973,12 @@ static const struct v4l2_subdev_internal_ops ar0822_internal_ops = {
 	.init_state = ar0822_init_state,
 };
 
+static void ar0822_free_controls(struct ar0822 *sensor)
+{
+	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+	mutex_destroy(&sensor->mutex);
+}
+
 static int ar0822_subdev_init(struct ar0822 *sensor)
 {
 	struct i2c_client *client = to_i2c_client(sensor->dev);
@@ -993,20 +999,26 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ret = media_entity_pads_init(&sensor->subdev.entity, 1, &sensor->pad);
 	if (ret < 0) {
-		v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
-		return ret;
+		dev_err(sensor->dev, "failed to init entity pads: %d\n", ret);
+		goto error_handler_free;
 	}
 
-	sensor->subdev.state_lock = sensor->subdev.ctrl_handler->lock;
-	v4l2_subdev_init_finalize(&sensor->subdev);
+	ret = v4l2_async_register_subdev_sensor(&sensor->subdev);
+	if (ret < 0) {
+		dev_err(sensor->dev,
+			"failed to register sensor sub-device: %d\n", ret);
+		goto error_media_entity;
+	}
 
 	return 0;
-}
 
-static void ar0822_subdev_cleanup(struct ar0822 *sensor)
-{
+error_media_entity:
 	media_entity_cleanup(&sensor->subdev.entity);
-	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+
+error_handler_free:
+	ar0822_free_controls(sensor);
+
+	return ret;
 }
 
 static int ar0822_power_on(struct ar0822 *sensor)
@@ -1209,6 +1221,12 @@ static int ar0822_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
+	pm_runtime_set_active(sensor->dev);
+	pm_runtime_get_noresume(sensor->dev);
+	pm_runtime_enable(sensor->dev);
+	pm_runtime_set_autosuspend_delay(sensor->dev, 1000);
+	pm_runtime_use_autosuspend(sensor->dev);
+
 	ret = ar0822_identify_model(sensor);
 	if (ret)
 		goto err_power_off;
@@ -1220,55 +1238,23 @@ static int ar0822_probe(struct i2c_client *client)
 	if (ret)
 		goto err_power_off;
 
-	/* sensor doesn't enter LP-11 state upon power up until and unless
-	* streaming is started, so upon power up switch the modes to:
-	* streaming -> standby
-	*/
-	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_STREAM_ON,
-			NULL);
-	if (ret < 0)
-		goto err_power_off;
-
-	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
-	usleep_range(2000, 2100);
-
-	/* Set the sensor back to low power mode */
-	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_LOW_POWER,
-			NULL);
-	if (ret < 0)
-		goto err_power_off;
-
-	/*
-	 * Enable runtime PM. As the device has been powered manually, mark it
-	 * as active, and increase the usage count without resuming the device.
-	 */
-	pm_runtime_set_active(sensor->dev);
-	pm_runtime_get_noresume(sensor->dev);
-	pm_runtime_enable(sensor->dev);
-
-	ret = v4l2_async_register_subdev_sensor(&sensor->subdev);
-	if (ret < 0)
-		goto err_pm;
-
 	/*
 	 * Finally, enable autosuspend and decrease the usage count. The device
 	 * will get suspended after the autosuspend delay, turning the power
 	 * off.
 	 */
-	pm_runtime_set_autosuspend_delay(sensor->dev, 1000);
-	pm_runtime_use_autosuspend(sensor->dev);
+	pm_runtime_mark_last_busy(sensor->dev);
 	pm_runtime_put_autosuspend(sensor->dev);
 
 	dev_dbg(sensor->dev, "AR0822 sensor probed successfully\n");
 
 	return 0;
 
-err_pm:
+err_power_off:
 	pm_runtime_disable(sensor->dev);
 	pm_runtime_put_noidle(sensor->dev);
-	ar0822_subdev_cleanup(sensor);
-err_power_off:
 	ar0822_power_off(sensor);
+
 	return ret;
 }
 
@@ -1278,8 +1264,8 @@ static void ar0822_remove(struct i2c_client *client)
 	struct ar0822 *sensor = to_ar0822(subdev);
 
 	v4l2_async_unregister_subdev(subdev);
-
-	ar0822_subdev_cleanup(sensor);
+	media_entity_cleanup(&subdev->entity);
+	ar0822_free_controls(sensor);
 
 	/*
 	 * Disable runtime PM. In case runtime PM is disabled in the kernel,
