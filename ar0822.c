@@ -238,7 +238,7 @@ struct ar0822 {
 	struct v4l2_subdev subdev;
 	struct media_pad pad;
 
-	struct v4l2_ctrl_handler ctrls;
+	struct v4l2_ctrl_handler ctrl_hdlr;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *hflip;
@@ -343,7 +343,7 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0822 *sensor =
-		container_of(ctrl->handler, struct ar0822, ctrls);
+		container_of(ctrl->handler, struct ar0822, ctrl_hdlr);
 	const struct v4l2_mbus_framefmt *format;
 	struct v4l2_subdev_state *state;
 	u32 exposure_max;
@@ -439,85 +439,79 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
-	dev_dbg(sensor->dev, "initializing controls\n");
-
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
+	struct ar0822_mode const *mode = sensor->mode;
 	s64 const *p_link_freq = sensor->hw_config.p_pll_config->p_link_freq;
-	unsigned int height = sensor->mode->height;
-	u32 exposure_max = AR0822_PIXEL_ARRAY_HEIGHT +
-			   AR0822_PIXEL_ARRAY_VBLANK - AR0822_EXPOSURE_MIN;
-	u32 hblank, exposure_def;
+	u32 exposure_max, exposure_def, hblank, vblank;
 	int ret;
 
 	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
 	if (ret < 0)
 		return ret;
 
-	v4l2_ctrl_handler_init(&sensor->ctrls, 10);
+	v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
 
-	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrls, &ar0822_ctrl_ops,
+	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
 				      p_link_freq - ar0822_link_frequencies,
 				      ar0822_link_frequencies);
-
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	exposure_max = sensor->mode->frame_length_lines - 4;
+	exposure_max = mode->frame_length_lines - AR0822_EXPOSURE_MIN;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
 			       AR0822_EXPOSURE_DEFAULT;
-	sensor->exposure = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
-					     V4L2_CID_EXPOSURE,
-					     AR0822_EXPOSURE_MIN, exposure_max,
-					     AR0822_EXPOSURE_STEP,
-					     exposure_def);
+	sensor->exposure = v4l2_ctrl_new_std(
+		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_EXPOSURE,
+		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
+		exposure_def);
 
-	v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 			  V4L2_CID_ANALOGUE_GAIN, AR0822_ANA_GAIN_MIN,
 			  AR0822_ANA_GAIN_MAX, AR0822_ANA_GAIN_STEP,
 			  AR0822_ANA_GAIN_MIN);
 
-	hblank = AR0822_PPL_DEFAULT - sensor->mode->width;
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+	hblank = mode->line_length_pck - mode->width;
+	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				 V4L2_CID_HBLANK, hblank, hblank, 1, hblank);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+	vblank = mode->frame_length_lines - mode->height;
+	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					   V4L2_CID_VBLANK, AR0822_VBLANK_MIN,
-					   sensor->mode->frame_length_lines - height, 1,
-					   sensor->mode->frame_length_lines - height);
+					   vblank, 1, vblank);
 
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrls, NULL, V4L2_CID_PIXEL_RATE,
+	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
 				 sensor->hw_config.p_pll_config->pixel_rate,
 				 sensor->hw_config.p_pll_config->pixel_rate, 1,
 				 sensor->hw_config.p_pll_config->pixel_rate);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
-	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrls, &ar0822_ctrl_ops,
+	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
-	// v4l2_ctrl_new_std_menu_items(&sensor->ctrls, &ar0822_ctrl_ops,
+	// v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 	// 			     V4L2_CID_TEST_PATTERN,
 	// 			     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 	// 			     0, 0, ar0822_test_pattern_menu);
 
-	v4l2_ctrl_new_fwnode_properties(&sensor->ctrls, &ar0822_ctrl_ops,
+	v4l2_ctrl_new_fwnode_properties(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					&props);
 
-	if (sensor->ctrls.error) {
-		dev_err_probe(sensor->dev, sensor->ctrls.error,
+	if (sensor->ctrl_hdlr.error) {
+		dev_err_probe(sensor->dev, sensor->ctrl_hdlr.error,
 			      "failed to add controls\n");
-		v4l2_ctrl_handler_free(&sensor->ctrls);
-		return sensor->ctrls.error;
+		v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+		return sensor->ctrl_hdlr.error;
 	}
-	sensor->subdev.ctrl_handler = &sensor->ctrls;
+	sensor->subdev.ctrl_handler = &sensor->ctrl_hdlr;
 
 	return 0;
 }
@@ -604,7 +598,7 @@ static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
 	if (ret)
 		goto err_pm;
 
-	ret = __v4l2_ctrl_handler_setup(&sensor->ctrls);
+	ret = __v4l2_ctrl_handler_setup(&sensor->ctrl_hdlr);
 	if (ret < 0)
 		goto err_pm;
 
@@ -772,11 +766,13 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
 				 mode->frame_length_lines - mode->height, 1,
 				 mode->frame_length_lines - mode->height);
-	__v4l2_ctrl_s_ctrl(sensor->vblank, mode->frame_length_lines - mode->height);
-	/*
-			* Update max exposure while meeting
-			* expected vblanking
-			*/
+	__v4l2_ctrl_s_ctrl(sensor->vblank,
+			   mode->frame_length_lines - mode->height);
+
+   /*
+	* Update max exposure while meeting
+	* expected vblanking
+	*/
 	exposure_max = mode->frame_length_lines - 4;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
@@ -983,7 +979,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ret = media_entity_pads_init(&sensor->subdev.entity, 1, &sensor->pad);
 	if (ret < 0) {
-		v4l2_ctrl_handler_free(&sensor->ctrls);
+		v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
 		return ret;
 	}
 
@@ -996,7 +992,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 static void ar0822_subdev_cleanup(struct ar0822 *sensor)
 {
 	media_entity_cleanup(&sensor->subdev.entity);
-	v4l2_ctrl_handler_free(&sensor->ctrls);
+	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
 }
 
 static int ar0822_power_on(struct ar0822 *sensor)
