@@ -446,11 +446,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	u32 exposure_max, exposure_def, hblank, vblank;
 	int ret;
 
-	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
-	if (ret < 0)
+	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
+	if (ret)
 		return ret;
 
-	v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
+	mutex_init(&sensor->mutex);
+	sensor->ctrl_hdlr.lock = &sensor->mutex;
 
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
@@ -502,18 +503,29 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	// 			     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 	// 			     0, 0, ar0822_test_pattern_menu);
 
-	v4l2_ctrl_new_fwnode_properties(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-					&props);
-
 	if (sensor->ctrl_hdlr.error) {
-		dev_err_probe(sensor->dev, sensor->ctrl_hdlr.error,
-			      "failed to add controls\n");
-		v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
-		return sensor->ctrl_hdlr.error;
+		ret = sensor->ctrl_hdlr.error;
+		dev_err(sensor->dev, ret, "failed to add controls\n");
+		goto error;
 	}
+
+	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
+	if (ret)
+		goto error;
+
+	ret = v4l2_ctrl_new_fwnode_properties(&sensor->ctrl_hdlr,
+					      &ar0822_ctrl_ops, &props);
+	if (ret)
+		goto error;
+
 	sensor->subdev.ctrl_handler = &sensor->ctrl_hdlr;
 
 	return 0;
+
+error:
+	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+	mutex_destroy(&sensor->mutex);
+	return ret;
 }
 
 static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
