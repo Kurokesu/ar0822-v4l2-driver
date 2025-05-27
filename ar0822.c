@@ -437,6 +437,25 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 	.s_ctrl = ar0822_s_ctrl,
 };
 
+static void ar0822_set_framing_limits(struct ar0822 *sensor)
+{
+	int hblank;
+	const struct ar0822_mode *mode = sensor->mode;
+
+	/* Update limits and set FPS to default */
+	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
+				 AR0822_VTS_MAX - mode->height, 1,
+				 mode->frame_length_lines - mode->height);
+
+	/* Setting this will adjust the exposure limits as well */
+	__v4l2_ctrl_s_ctrl(sensor->vblank,
+			   mode->frame_length_lines - mode->height);
+
+	hblank = mode->line_length_pck - mode->width;
+	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
+	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
+}
+
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
@@ -528,6 +547,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		goto error;
 
 	sensor->subdev.ctrl_handler = &sensor->ctrl_hdlr;
+
+	mutex_lock(&sensor->mutex);
+
+	ar0822_set_framing_limits(sensor);
+
+	mutex_unlock(&sensor->mutex);
 
 	return 0;
 
@@ -776,38 +801,6 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 	mutex_unlock(&sensor->mutex);
 
 	return 0;
-}
-
-static void ar0822_set_framing_limits(struct ar0822 *sensor)
-{
-	const struct ar0822_mode *mode = sensor->mode;
-	int exposure_max, exposure_def, hblank;
-
-	/* Update limits and set FPS to default */
-	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
-				 mode->frame_length_lines - mode->height, 1,
-				 mode->frame_length_lines - mode->height);
-	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   mode->frame_length_lines - mode->height);
-
-   /*
-	* Update max exposure while meeting
-	* expected vblanking
-	*/
-	exposure_max = mode->frame_length_lines - 4;
-	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
-			       exposure_max :
-			       AR0822_EXPOSURE_DEFAULT;
-	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
-				 exposure_max, sensor->exposure->step,
-				 exposure_def);
-	/*
-			* Currently PPL is fixed to AR0822_PPL_DEFAULT, so
-			* hblank depends on mode->width only, and is not
-			* changeble in any way other than changing the mode.
-			*/
-	hblank = AR0822_PPL_DEFAULT - mode->width;
-	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
 }
 
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
