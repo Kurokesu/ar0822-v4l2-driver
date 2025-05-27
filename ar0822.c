@@ -27,7 +27,7 @@
 #define AR0822_EMBEDDED_LINE_WIDTH 16384
 #define AR0822_NUM_EMBEDDED_LINES 0
 
-#define AR0822_VBLANK_MIN 16
+#define AR0822_VBLANK_MIN 24
 #define AR0822_VTS_MAX 0xFFFF
 #define AR0822_VTS_30FPS 2184
 #define AR0822_EXPOSURE_DEFAULT 0x0640
@@ -192,7 +192,7 @@ static const struct ar0822_mode ar0822_modes[] = {
 	{
 		.width = 3840,
 		.height = 2160,
-		.line_length_pck = 14652,
+		.line_length_pck = 2106,
 		.frame_length_lines = 2184,
 		.crop = {
 			.left = 0,
@@ -443,7 +443,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	struct v4l2_ctrl *ctrl;
 	struct ar0822_mode const *mode = sensor->mode;
 	s64 const *p_link_freq = sensor->hw_config.p_pll_config->p_link_freq;
-	u32 exposure_max, exposure_def, hblank, vblank;
+	u32 exposure_max, exposure_def, hblank;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
@@ -453,6 +453,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	mutex_init(&sensor->mutex);
 	sensor->ctrl_hdlr.lock = &sensor->mutex;
 
+	/* Link frequency control */
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
@@ -461,6 +462,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+	/* Exposure control */
 	exposure_max = mode->frame_length_lines - AR0822_EXPOSURE_MIN;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
@@ -470,22 +472,26 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
 		exposure_def);
 
+	/* Analogue gain control */
 	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 			  V4L2_CID_ANALOGUE_GAIN, AR0822_ANA_GAIN_MIN,
 			  AR0822_ANA_GAIN_MAX, AR0822_ANA_GAIN_STEP,
 			  AR0822_ANA_GAIN_MIN);
 
+	/* Horizontal blanking control */
 	hblank = mode->line_length_pck - mode->width;
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				 V4L2_CID_HBLANK, hblank, hblank, 1, hblank);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	vblank = mode->frame_length_lines - mode->height;
-	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-					   V4L2_CID_VBLANK, AR0822_VBLANK_MIN,
-					   vblank, 1, vblank);
+	/* Vertical blanking control */
+	sensor->vblank = v4l2_ctrl_new_std(
+		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_VBLANK,
+		AR0822_VBLANK_MIN, AR0822_VTS_MAX - mode->height, 1,
+		mode->frame_length_lines - mode->height);
 
+	/* Pixel rate control */
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
 				 sensor->hw_config.p_pll_config->pixel_rate,
 				 sensor->hw_config.p_pll_config->pixel_rate, 1,
@@ -493,11 +499,14 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
+	/* Horizontal flip control */
 	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
+	/* Vertical flip control */
 	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
+	/* Test pattern control */
 	// v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 	// 			     V4L2_CID_TEST_PATTERN,
 	// 			     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
@@ -505,7 +514,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
-		dev_err(sensor->dev, ret, "failed to add controls\n");
+		dev_err(sensor->dev, "failed to init controls %d\n", ret);
 		goto error;
 	}
 
