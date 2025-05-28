@@ -159,8 +159,25 @@ typedef struct {
 	s64 const *p_link_freq;
 	u64 const *p_extclk_freq;
 	unsigned long pixel_rate;
-	struct cci_reg_sequence regs;
+	unsigned int regs_amount;
+	struct cci_reg_sequence const *regs;
 } ar0822_pll_config_t;
+
+static const struct cci_reg_sequence ar0822_pll_config_24_960[] = {
+	{ AR0822_REG_PLL_MULTIPLIER, 0x0050 },
+	{ AR0822_REG_PRE_PLL_CLK_DIV, 0x0001 },
+	{ AR0822_REG_VT_SYS_CLK_DIV, 0x0002 },
+	{ AR0822_REG_VT_PIX_CLK_DIV, 0x0006 },
+	{ AR0822_REG_OP_SYS_CLK_DIV, 0x0002 },
+	{ AR0822_REG_OP_WORD_CLK_DIV, 0x0006 },
+	{ AR0822_REG_FRAME_PREAMBLE, 0x00B8 },
+	{ AR0822_REG_LINE_PREAMBLE, 0x0079 },
+	{ AR0822_REG_MIPI_TIMING_0, 0x830E },
+	{ AR0822_REG_MIPI_TIMING_1, 0x8451 },
+	{ AR0822_REG_MIPI_TIMING_2, 0xD0CE },
+	{ AR0822_REG_MIPI_TIMING_3, 0x0494 },
+	{ AR0822_REG_MIPI_TIMING_4, 0x1810 },
+};
 
 static const ar0822_pll_config_t ar0822_pll_configs[] = {
 	{
@@ -169,7 +186,7 @@ static const ar0822_pll_config_t ar0822_pll_configs[] = {
 		.p_extclk_freq =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
 		.pixel_rate = AR0822_PIXEL_RATE,
-		.regs = {},
+		.regs = NULL,
 	},
 	{
 		.p_link_freq =
@@ -177,7 +194,8 @@ static const ar0822_pll_config_t ar0822_pll_configs[] = {
 		.p_extclk_freq =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
 		.pixel_rate = AR0822_PIXEL_RATE,
-		.regs = {},
+		.regs_amount = ARRAY_SIZE(ar0822_pll_config_24_960),
+		.regs = ar0822_pll_config_24_960,
 	},
 };
 
@@ -263,29 +281,12 @@ struct ar0822 {
 };
 
 static const struct cci_reg_sequence ar0822_init_table[] = {
-	/* PLL setup */
-	{ AR0822_REG_PLL_MULTIPLIER, 0x0050 },
-	{ AR0822_REG_PRE_PLL_CLK_DIV, 0x0001 },
-	{ AR0822_REG_VT_SYS_CLK_DIV, 0x0002 },
-	{ AR0822_REG_VT_PIX_CLK_DIV, 0x0006 },
-	{ AR0822_REG_OP_SYS_CLK_DIV, 0x0002 },
-	{ AR0822_REG_OP_WORD_CLK_DIV, 0x0006 },
-	{ AR0822_REG_FRAME_PREAMBLE, 0x00B8 },
-	{ AR0822_REG_LINE_PREAMBLE, 0x0079 },
-	{ AR0822_REG_MIPI_TIMING_0, 0x830E },
-	{ AR0822_REG_MIPI_TIMING_1, 0x8451 },
-	{ AR0822_REG_MIPI_TIMING_2, 0xD0CE },
-	{ AR0822_REG_MIPI_TIMING_3, 0x0494 },
-	{ AR0822_REG_MIPI_TIMING_4, 0x1810 },
 	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
 	{ AR0822_REG_T1_PIX_DEF_ID2, 0x37C3 },
 	{ AR0822_REG_SERIAL_FORMAT, 0x0202 }, // 2 lane MIPI
 	{ AR0822_REG_DATA_FORMAT_BITS, 0x0C0C }, // 12bit / 12bit raw
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
-	{ AR0822_REG_LINE_LENGTH_PCK, AR0822_PPL_DEFAULT },
-	{ AR0822_REG_FRAME_LENGTH_LINES, 0x0888 }, // 2184
-	{ AR0822_REG_COARSE_INTEGRATION_TIME, 0x017C },
 
 	// { AR0822_REG_PLL_CONTROL, 0x0030 },
 	// // { AR0822_REG_RESET, AR0822_MODE_STREAM_ON },
@@ -514,7 +515,8 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	/* Horizontal blanking control */
 	hblank = mode->line_length_pck - mode->width;
 	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-				 V4L2_CID_HBLANK, hblank, hblank, 1, hblank);
+					   V4L2_CID_HBLANK, hblank, hblank, 1,
+					   hblank);
 	if (sensor->hblank)
 		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -608,6 +610,17 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 	/* wait 160000 EXTCLKs for software standdby */
 	usleep_range(7000, 8000);
 
+	/* PLL config */
+	ret = cci_multi_reg_write(sensor->regmap,
+				  sensor->hw_config.p_pll_config->regs,
+				  sensor->hw_config.p_pll_config->regs_amount,
+				  NULL);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to write PLL config: %d\n", ret);
+		return ret;
+	}
+
+	/* Common init */
 	ret = cci_multi_reg_write(sensor->regmap, ar0822_init_table,
 				  ARRAY_SIZE(ar0822_init_table), NULL);
 	if (ret) {
@@ -615,25 +628,34 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 		return ret;
 	}
 
+	/* Mode init */
+	ret = cci_write(sensor->regmap, AR0822_REG_LINE_LENGTH_PCK,
+			sensor->mode->line_length_pck, NULL);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to set line length: %d\n", ret);
+		return ret;
+	}
+
+	ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
+			sensor->mode->frame_length_lines_min, NULL);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to set frame length: %d\n", ret);
+		return ret;
+	}
+
+	// { AR0822_REG_COARSE_INTEGRATION_TIME, 0x017C },
+
 	usleep_range(1000, 1100);
 
+	/* Apply customized values from user */
+	ret = __v4l2_ctrl_handler_setup(sensor->subdev.ctrl_handler);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to setup controls: %d\n", ret);
+		return ret;
+	}
+
+	ret = ar0822_mode_stream_on(sensor);
 	return ret;
-}
-
-static int ar0822_mode_stream_on(struct ar0822 *sensor)
-{
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
-	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
-			 AR0822_MODE_SELECT_STREAM_ON, NULL);
-}
-
-static int ar0822_mode_stream_off(struct ar0822 *sensor)
-{
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
-	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
-			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
 }
 
 static int ar0822_set_stream(struct v4l2_subdev *sd, int enable)
