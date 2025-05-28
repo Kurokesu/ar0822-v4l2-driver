@@ -439,7 +439,7 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
-	int hblank;
+	unsigned int hblank;
 	const struct ar0822_mode *mode = sensor->mode;
 
 	/* Update limits and set FPS to default */
@@ -461,6 +461,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
 	struct ar0822_mode const *mode = sensor->mode;
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	s64 const *p_link_freq = sensor->hw_config.p_pll_config->p_link_freq;
 	u32 exposure_max, exposure_def, hblank;
 	int ret;
@@ -499,10 +500,10 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	/* Horizontal blanking control */
 	hblank = mode->line_length_pck - mode->width;
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				 V4L2_CID_HBLANK, hblank, hblank, 1, hblank);
-	if (ctrl)
-		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+	if (sensor->hblank)
+		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Vertical blanking control */
 	sensor->vblank = v4l2_ctrl_new_std(
@@ -521,9 +522,14 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	/* Horizontal flip control */
 	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
+	if (sensor->hflip)
+		sensor->hflip->flags |= V4L2_CTRL_FLAG_MODIFY_LAYOUT;
+
 	/* Vertical flip control */
 	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
+	if (sensor->vflip)
+		sensor->vflip->flags |= V4L2_CTRL_FLAG_MODIFY_LAYOUT;
 
 	/* Test pattern control */
 	// v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
@@ -533,11 +539,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
-		dev_err(sensor->dev, "failed to init controls %d\n", ret);
+		dev_err(&client->dev, "failed to init controls %d\n", ret);
 		goto error;
 	}
 
-	ret = v4l2_fwnode_device_parse(sensor->dev, &props);
+	ret = v4l2_fwnode_device_parse(&client->dev, &props);
 	if (ret)
 		goto error;
 
