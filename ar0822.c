@@ -18,6 +18,7 @@
 
 #include <media/v4l2-cci.h>
 #include <media/v4l2-ctrls.h>
+#include <media/v4l2-event.h>
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
@@ -623,7 +624,7 @@ static int ar0822_mode_stream_off(struct ar0822 *sensor)
 			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
 }
 
-static int ar0822_s_stream(struct v4l2_subdev *sd, int enable)
+static int ar0822_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
 	struct v4l2_subdev_state *state;
@@ -675,16 +676,43 @@ err_pm:
 	goto unlock;
 }
 
+/*
+ * The supported formats.
+ * This table MUST contain 4 entries per format, to cover the various flip
+ * combinations in the order
+ */
+static const u32 ar0822_format_codes[] = {
+	/* 12-bit modes. */
+	MEDIA_BUS_FMT_SGRBG12_1X12, /* 0: no flip */
+	MEDIA_BUS_FMT_SRGGB12_1X12, /* 1: horizontal flip */
+	MEDIA_BUS_FMT_SBGGR12_1X12, /* 2: vertical flip */
+	MEDIA_BUS_FMT_SGBRG12_1X12, /* 3: horizontal and vertical flip */
+};
+
+/* Get bayer order based on flip setting. */
+static u32 ar0822_get_format_code(struct ar0822 *sensor)
+{
+	unsigned int i;
+
+	lockdep_assert_held(&sensor->mutex);
+
+	i = (sensor->vflip->val ? 2 : 0) | (sensor->hflip->val ? 1 : 0);
+
+	return ar0822_format_codes[i];
+}
+
 static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	pr_info("%s %d\n", __func__, code->index);
 
+	struct ar0822 *sensor = to_ar0822(sd);
+
 	if (code->index != 0)
 		return -EINVAL;
 
-	code->code = MEDIA_BUS_FMT_SGRBG12_1X12;
+	code->code = ar0822_get_format_code(sensor);
 
 	return 0;
 }
@@ -757,6 +785,7 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
+	int ret = 0;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -767,24 +796,27 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 		struct v4l2_mbus_framefmt *try_fmt =
 			v4l2_subdev_state_get_format(sd_state, fmt->pad);
 		/* update the code which could change due to vflip or hflip: */
-		try_fmt->code =
-			fmt->pad == IMAGE_PAD ?
-				ar0822_get_format_code(sensor, try_fmt->code) :
-				MEDIA_BUS_FMT_SENSOR_DATA;
+
+		if (fmt->pad != IMAGE_PAD) {
+			ret = -EINVAL;
+			goto mutex_release;
+		}
+
+		try_fmt->code = ar0822_get_format_code(sensor);
 		fmt->format = *try_fmt;
 	} else {
-		if (fmt->pad == IMAGE_PAD) {
-			ar0822_update_image_pad_format(sensor, sensor->mode,
-						       fmt);
-			fmt->format.code = ar0822_get_format_code(
-				sensor, sensor->fmt_code);
-		} else {
-			// ar0822_update_metadata_pad_format(fmt);
+		if (fmt->pad != IMAGE_PAD) {
+			ret = -EINVAL;
+			goto mutex_release;
 		}
-	}
-	mutex_unlock(&sensor->mutex);
 
-	return 0;
+		ar0822_update_image_pad_format(sensor, sensor->mode, fmt);
+		fmt->format.code = ar0822_get_format_code(sensor);
+	}
+
+mutex_release:
+	mutex_unlock(&sensor->mutex);
+	return ret;
 }
 
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
@@ -792,70 +824,32 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	struct v4l2_mbus_framefmt *format;
+	const struct ar0822_mode *mode;
+	struct v4l2_mbus_framefmt *framefmt;
 
-	format = v4l2_subdev_state_get_format(state, fmt->pad);
+	if (fmt->pad >= NUM_PADS)
+		return -EINVAL;
 
-	format->width = fmt->format.width;
-	format->height = fmt->format.height;
-	format->code = MEDIA_BUS_FMT_SGRBG12_1X12;
-	format->field = V4L2_FIELD_NONE;
-	format->colorspace = V4L2_COLORSPACE_SRGB;
-	format->ycbcr_enc = V4L2_MAP_YCBCR_ENC_DEFAULT(format->colorspace);
-	format->quantization = V4L2_MAP_QUANTIZATION_DEFAULT(
-		true, format->colorspace, format->ycbcr_enc);
-	;
-	format->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(format->colorspace);
+	mutex_lock(&sensor->mutex);
 
-	fmt->format = *format;
+	fmt->format.code = ar0822_get_format_code(sensor);
 
-	dev_dbg(sensor->dev, "%s: %d %d %d %d\n", __func__, fmt->pad,
-		fmt->format.width, fmt->format.height, fmt->format.code);
+	mode = v4l2_find_nearest_size(ar0822_modes, ARRAY_SIZE(ar0822_modes),
+				      width, height, fmt->format.width,
+				      fmt->format.height);
+	ar0822_update_image_pad_format(sensor, mode, fmt);
+	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+		framefmt = v4l2_subdev_state_get_format(state, fmt->pad);
+		*framefmt = fmt->format;
+	} else if (sensor->mode != mode) {
+		sensor->mode = mode;
+		sensor->fmt_code = fmt->format.code;
+		ar0822_set_framing_limits(sensor);
+	}
+
+	mutex_unlock(&sensor->mutex);
 
 	return 0;
-
-	// struct ar0822 *sensor = to_ar0822(sd);
-	// const struct ar0822_mode *mode;
-	// struct v4l2_mbus_framefmt *framefmt;
-
-	// if (fmt->pad >= 1)
-	// 	return -EINVAL;
-
-	// mutex_lock(&sensor->mutex);
-
-	// if (fmt->pad == IMAGE_PAD) {
-	// 	fmt->format.code =
-	// 		ar0822_get_format_code(sensor, fmt->format.code);
-
-	// 	mode = v4l2_find_nearest_size(
-	// 		ar0822_modes,
-	// 		ARRAY_SIZE(ar0822_modes), width, height,
-	// 		fmt->format.width, fmt->format.height);
-	// 	ar0822_update_image_pad_format(sensor, mode, fmt);
-	// 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-	// 		framefmt =
-	// 			v4l2_subdev_state_get_format(state, fmt->pad);
-	// 		*framefmt = fmt->format;
-	// 	} else if (sensor->mode != mode ||
-	// 		   sensor->fmt_code != fmt->format.code) {
-	// 		sensor->mode = mode;
-	// 		sensor->fmt_code = fmt->format.code;
-	// 		ar0822_set_framing_limits(sensor);
-	// 	}
-	// } else {
-	// 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-	// 		framefmt =
-	// 			v4l2_subdev_state_get_format(state, fmt->pad);
-	// 		*framefmt = fmt->format;
-	// 	} else {
-	// 		/* Only one embedded data mode is supported */
-	// 		ar0822_update_metadata_pad_format(fmt);
-	// 	}
-	// }
-
-	// mutex_unlock(&sensor->mutex);
-
-	// return 0;
 }
 
 static const struct v4l2_rect *
@@ -877,7 +871,23 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_selection *sel)
 {
 	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP:
+	case V4L2_SEL_TGT_CROP: {
+		struct ar0822 *sensor = to_ar0822(sd);
+
+		mutex_lock(&sensor->mutex);
+		sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
+						sel->which);
+		mutex_unlock(&sensor->mutex);
+
+		return 0;
+	}
+	case V4L2_SEL_TGT_NATIVE_SIZE:
+		sel->r.top = 0;
+		sel->r.left = 0;
+		sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
+		sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
+
+		return 0;
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
 		sel->r.top = 0;
@@ -889,72 +899,29 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	}
 
 	return -EINVAL;
-
-	// switch (sel->target) {
-	// case V4L2_SEL_TGT_CROP: {
-	// 	struct ar0822 *sensor = to_ar0822(sd);
-
-	// 	mutex_lock(&sensor->mutex);
-	// 	sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
-	// 					sel->which);
-	// 	mutex_unlock(&sensor->mutex);
-
-	// 	return 0;
-	// }
-	// case V4L2_SEL_TGT_NATIVE_SIZE:
-	// 	sel->r.top = 0;
-	// 	sel->r.left = 0;
-	// 	sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
-	// 	sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
-
-	// 	return 0;
-	// case V4L2_SEL_TGT_CROP_DEFAULT:
-	// case V4L2_SEL_TGT_CROP_BOUNDS:
-	// 	sel->r.top = 0;
-	// 	sel->r.left = 0;
-	// 	sel->r.width = AR0822_PIXEL_ARRAY_WIDTH;
-	// 	sel->r.height = AR0822_PIXEL_ARRAY_HEIGHT;
-
-	// 	return 0;
-	// }
-
-	// return -EINVAL;
 }
 
+static const struct v4l2_subdev_core_ops ar0822_core_ops = {
+	.subscribe_event = v4l2_ctrl_subdev_subscribe_event,
+	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
+};
+
 static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
-	.s_stream = ar0822_s_stream,
+	.s_stream = ar0822_set_stream,
 };
 
 static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
-	.get_fmt = v4l2_subdev_get_fmt,
+	.get_fmt = ar0822_get_pad_format,
 	.set_fmt = ar0822_set_pad_format,
 	.get_selection = ar0822_get_selection,
 };
 
 static const struct v4l2_subdev_ops ar0822_subdev_ops = {
+	.core = &ar0822_core_ops,
 	.video = &ar0822_subdev_video_ops,
 	.pad = &ar0822_subdev_pad_ops,
-};
-
-static int ar0822_init_state(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_state *state)
-{
-	struct v4l2_subdev_format format = {
-		.format = {
-			.width = AR0822_PIXEL_ARRAY_WIDTH,
-			.height = AR0822_PIXEL_ARRAY_HEIGHT,
-		},
-	};
-
-	ar0822_set_pad_format(sd, state, &format);
-
-	return 0;
-}
-
-static const struct v4l2_subdev_internal_ops ar0822_internal_ops = {
-	.init_state = ar0822_init_state,
 };
 
 static void ar0822_free_controls(struct ar0822 *sensor)
@@ -965,13 +932,9 @@ static void ar0822_free_controls(struct ar0822 *sensor)
 
 static int ar0822_subdev_init(struct ar0822 *sensor)
 {
-	struct i2c_client *client = to_i2c_client(sensor->dev);
 	int ret;
 
 	dev_dbg(sensor->dev, "%s\n", __func__);
-
-	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
-	sensor->subdev.internal_ops = &ar0822_internal_ops;
 
 	ret = ar0822_ctrls_init(sensor);
 	if (ret)
@@ -1186,6 +1149,8 @@ static int ar0822_probe(struct i2c_client *client)
 	sensor->dev = &client->dev;
 
 	dev_dbg(sensor->dev, "probing AR0822 sensor\n");
+
+	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
 
 	ret = ar0822_parse_hw_config(sensor);
 	if (ret)
