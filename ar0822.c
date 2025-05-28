@@ -121,7 +121,7 @@
 #define AR0822_REG_MIPI_F4_PDT CCI_REG16(0x334E)
 #define AR0822_REG_MIPI_F4_VC CCI_REG16(0x3350)
 
-enum pad_types { IMAGE_PAD, METADATA_PAD, NUM_PADS };
+enum pad_types { IMAGE_PAD, NUM_PADS };
 
 static const char *const ar0822_supply_names[] = {
 	"vana", /* Analog (2.8V) supply */
@@ -687,51 +687,29 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_state *state,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
-	const struct v4l2_mbus_framefmt *format;
+	struct ar0822 *sensor = to_ar0822(sd);
 
-	pr_info("%s\n", __func__);
-
-	format = v4l2_subdev_state_get_format(state, fse->pad);
-
-	if (fse->index > 0 || fse->code != format->code)
+	if (fse->pad >= NUM_PADS)
 		return -EINVAL;
 
-	pr_info("%s %d %d\n", __func__, fse->min_width, fse->min_height);
+	if (fse->pad != IMAGE_PAD)
+		return -EINVAL;
 
-	fse->min_width = AR0822_PIXEL_ARRAY_WIDTH;
+	if (fse->index >= ARRAY_SIZE(ar0822_modes))
+		return -EINVAL;
+
+	dev_dbg(sensor->dev, "%s: index %d code %x\n", __func__, fse->index,
+		fse->code);
+
+	if (fse->code != ar0822_get_format_code(sensor))
+		return -EINVAL;
+
+	fse->min_width = ar0822_modes[fse->index].width;
 	fse->max_width = fse->min_width;
-	fse->min_height = AR0822_PIXEL_ARRAY_HEIGHT;
+	fse->min_height = ar0822_modes[fse->index].height;
 	fse->max_height = fse->min_height;
+
 	return 0;
-}
-
-/*
- * The supported formats.
- * This table MUST contain 4 entries per format, to cover the various flip
- * combinations in the order
- * - no flip
- * - h flip
- * - v flip
- * - h&v flips
- */
-static const u32 codes[] = {
-	/* 12-bit modes. */
-	MEDIA_BUS_FMT_SGRBG12_1X12,
-	MEDIA_BUS_FMT_SGRBG12_1X12, // TODO: check
-	MEDIA_BUS_FMT_SGRBG12_1X12,
-	MEDIA_BUS_FMT_SGRBG12_1X12,
-};
-
-/* Get bayer order based on flip setting. */
-static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
-{
-	unsigned int i;
-
-	lockdep_assert_held(&sensor->mutex);
-
-	i = (sensor->vflip->val ? 2 : 0) | (sensor->hflip->val ? 1 : 0);
-
-	return codes[i];
 }
 
 static void ar0822_set_default_format(struct ar0822 *sensor)
