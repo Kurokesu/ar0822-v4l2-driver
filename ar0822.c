@@ -355,83 +355,70 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 // return 0;
 // }
 
-static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
+static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
+{
+	int exposure_max, exposure_def;
+
+	/* Honour the VBLANK limits when setting exposure. */
+	exposure_max = sensor->mode->height + sensor->vblank->val -
+		       AR0822_EXPOSURE_MIN;
+	exposure_def = min(exposure_max, sensor->exposure->val);
+	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
+				 exposure_max, sensor->exposure->step,
+				 exposure_def);
+}
+
+static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0822 *sensor =
 		container_of(ctrl->handler, struct ar0822, ctrl_hdlr);
-	const struct v4l2_mbus_framefmt *format;
-	struct v4l2_subdev_state *state;
-	u32 exposure_max;
-	unsigned int vmax;
-	int ret;
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	int ret = 0;
 
-	dev_dbg(sensor->dev, "ar0822_s_ctrl: %d %d\n", ctrl->id, ctrl->val);
+	dev_dbg(sensor->dev, "ar0822_set_ctrl: %d %d\n", ctrl->id, ctrl->val);
 
-	state = v4l2_subdev_get_locked_active_state(&sensor->subdev);
-	format = v4l2_subdev_state_get_format(state, 0);
+	if (ctrl->id == V4L2_CID_VBLANK)
+		ar0822_adjust_exposure_range(sensor);
 
-	if (ctrl->id == V4L2_CID_VBLANK) {
-		dev_dbg(sensor->dev, "ar0822_s_ctrl: VBLANK %d\n", ctrl->val);
-		dev_dbg(sensor->dev, "ar0822_s_ctrl: format height %d\n",
-			format->height);
-		exposure_max = format->height + ctrl->val - AR0822_EXPOSURE_MIN;
-		dev_dbg(sensor->dev, "ar0822_s_ctrl: exposure_max %d\n",
-			exposure_max);
-		__v4l2_ctrl_modify_range(sensor->exposure,
-					 sensor->exposure->minimum,
-					 exposure_max, sensor->exposure->step,
-					 sensor->exposure->default_value);
-	}
-
-	if (!pm_runtime_get_if_in_use(sensor->dev))
+	/*
+	 * Applying V4L2 control value only happens
+	 * when power is up for streaming
+	 */
+	if (pm_runtime_get_if_in_use(&client->dev) == 0)
 		return 0;
 
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
-		dev_dbg(sensor->dev, "ar0822_s_ctrl: VBLANK %d\n",
-			format->height + ctrl->val);
+		dev_dbg(sensor->dev, "ar0822_set_ctrl: VBLANK %d\n",
+			sensor->mode->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-				format->height + ctrl->val, NULL);
-		if (ret)
-			return ret;
-		/*
-		 * Deliberately fall through as exposure is set based on VMAX
-		 * which has just changed.
-		 */
-		fallthrough;
-	case V4L2_CID_EXPOSURE:
-		/* clamp the exposure value to VMAX. */
-		vmax = format->height + sensor->vblank->cur.val;
-		ctrl->val = min_t(int, ctrl->val, vmax);
-		dev_dbg(sensor->dev,
-			"ar0822_s_ctrl: AR0822_REG_COARSE_INTEGRATION_TIME %d\n",
-			vmax - ctrl->val);
-		ret = cci_write(sensor->regmap,
-				AR0822_REG_COARSE_INTEGRATION_TIME,
-				vmax - ctrl->val, NULL);
+				sensor->mode->height + ctrl->val, NULL);
 		break;
-
+	case V4L2_CID_EXPOSURE:
+		dev_dbg(sensor->dev,
+			"ar0822_set_ctrl: AR0822_REG_COARSE_INTEGRATION_TIME %d\n",
+			ctrl->val);
+		ret = cci_write(sensor->regmap,
+				AR0822_REG_COARSE_INTEGRATION_TIME, ctrl->val,
+				NULL);
+		break;
 	case V4L2_CID_ANALOGUE_GAIN:
 		dev_dbg(sensor->dev,
-			"ar0822_s_ctrl: AR0822_REG_SENSOR_GAIN %d\n",
+			"ar0822_set_ctrl: AR0822_REG_SENSOR_GAIN %d\n",
 			ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_SENSOR_GAIN,
 				ctrl->val, NULL);
 		break;
-
 	case V4L2_CID_HFLIP:
-	case V4L2_CID_VFLIP: {
-		u32 flip = (sensor->hflip->val
-			    << AR0822_IMAGE_ORIENTATION_HFLIP_BIT) |
-			   (sensor->vflip->val
-			    << AR0822_IMAGE_ORIENTATION_VFLIP_BIT);
+	case V4L2_CID_VFLIP:
+
 		dev_dbg(sensor->dev,
-			"ar0822_s_ctrl: AR0822_REG_IMAGE_ORIENTATION %d\n",
-			flip);
+			"ar0822_set_ctrl: AR0822_REG_IMAGE_ORIENTATION %d\n",
+			sensor->hflip->val | sensor->vflip->val << 1);
 		ret = cci_write(sensor->regmap, AR0822_REG_IMAGE_ORIENTATION,
-				flip, NULL);
+				sensor->hflip->val | sensor->vflip->val << 1,
+				NULL);
 		break;
-	}
 
 		// case V4L2_CID_TEST_PATTERN:
 		// 	ret = ar0822_set_testpattern(sensor, ctrl->val);
@@ -443,13 +430,14 @@ static int ar0822_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	}
 
-	pm_runtime_put(sensor->dev);
+	pm_runtime_mark_last_busy(&client->dev);
+	pm_runtime_put_autosuspend(&client->dev);
 
 	return ret;
 }
 
 static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
-	.s_ctrl = ar0822_s_ctrl,
+	.s_ctrl = ar0822_set_ctrl,
 };
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
