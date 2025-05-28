@@ -185,7 +185,7 @@ struct ar0822_mode {
 	unsigned int width;
 	unsigned int height;
 	unsigned int line_length_pck;
-	unsigned int frame_length_lines;
+	unsigned int frame_length_lines_min;
 	struct v4l2_rect crop;
 };
 
@@ -193,8 +193,8 @@ static const struct ar0822_mode ar0822_modes[] = {
 	{
 		.width = 3840,
 		.height = 2160,
-		.line_length_pck = 2106,
-		.frame_length_lines = 2184,
+		.line_length_pck = 3856, // Fixed line length for 4K
+		.frame_length_lines_min = 2184,
 		.crop = {
 			.left = 0,
 			.top = 0,
@@ -202,6 +202,18 @@ static const struct ar0822_mode ar0822_modes[] = {
 			.height = 2160,
 		},
 	},
+	// {
+	// 	.width = 1920,
+	// 	.height = 1080,
+	// 	.line_length_pck = 1146,
+	// 	.frame_length_lines_min = 1104,
+	// 	.crop = {
+	// 		.left = 0,
+	// 		.top = 0,
+	// 		.width = 1920,
+	// 		.height = 1080,
+	// 	},
+	// }
 };
 
 static const char *const ar0822_test_pattern_menu[] = {
@@ -446,11 +458,11 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 	/* Update limits and set FPS to default */
 	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
 				 AR0822_VTS_MAX - mode->height, 1,
-				 mode->frame_length_lines - mode->height);
+				 mode->frame_length_lines_min - mode->height);
 
 	/* Setting this will adjust the exposure limits as well */
 	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   mode->frame_length_lines - mode->height);
+			   mode->frame_length_lines_min - mode->height);
 
 	hblank = mode->line_length_pck - mode->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
@@ -484,7 +496,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Exposure control */
-	exposure_max = mode->frame_length_lines - AR0822_EXPOSURE_MIN;
+	exposure_max = mode->frame_length_lines_min - AR0822_EXPOSURE_MIN;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
 			       AR0822_EXPOSURE_DEFAULT;
@@ -510,7 +522,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	sensor->vblank = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_VBLANK,
 		AR0822_VBLANK_MIN, AR0822_VTS_MAX - mode->height, 1,
-		mode->frame_length_lines - mode->height);
+		mode->frame_length_lines_min - mode->height);
 
 	/* Pixel rate control */
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
