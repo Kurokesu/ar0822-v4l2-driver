@@ -277,6 +277,7 @@ struct ar0822 {
 	struct v4l2_ctrl *exposure;
 
 	struct mutex mutex;
+	bool streaming;
 	const struct ar0822_mode *mode;
 };
 
@@ -583,9 +584,30 @@ error:
 	return ret;
 }
 
-static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
+static int ar0822_mode_stream_on(struct ar0822 *sensor)
 {
+	dev_dbg(sensor->dev, "%s\n", __func__);
+
+	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
+			 AR0822_MODE_SELECT_STREAM_ON, NULL);
+}
+
+static int ar0822_mode_stream_off(struct ar0822 *sensor)
+{
+	dev_dbg(sensor->dev, "%s\n", __func__);
+
+	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
+			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
+}
+
+static int ar0822_start_streaming(struct ar0822 *sensor)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	int ret;
+
+	ret = pm_runtime_resume_and_get(&client->dev);
+	if (ret < 0)
+		return ret;
 
 	dev_dbg(sensor->dev, "%s: setting up sensor\n", __func__);
 
@@ -658,56 +680,57 @@ static int ar0822_setup(struct ar0822 *sensor, struct v4l2_subdev_state *state)
 	return ret;
 }
 
+/* Stop streaming */
+static void ar0822_stop_streaming(struct ar0822 *sensor)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	int ret;
+
+	ret = ar0822_mode_stream_off(sensor);
+	if (ret)
+		dev_err(&client->dev, "%s failed to set stream\n", __func__);
+
+	pm_runtime_mark_last_busy(&client->dev);
+	pm_runtime_put_autosuspend(&client->dev);
+}
+
 static int ar0822_set_stream(struct v4l2_subdev *sd, int enable)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	struct v4l2_subdev_state *state;
-	int ret;
+	int ret = 0;
 
-	pr_info("%s enable %d\n", __func__, enable);
-
-	state = v4l2_subdev_lock_and_get_active_state(sd);
-
-	if (!enable) {
-		ret = ar0822_mode_stream_off(sensor);
-
-		pm_runtime_mark_last_busy(sensor->dev);
-		pm_runtime_put_autosuspend(sensor->dev);
-
-		goto unlock;
+	mutex_lock(&sensor->mutex);
+	if (sensor->streaming == enable) {
+		mutex_unlock(&sensor->mutex);
+		return 0;
 	}
 
-	ret = pm_runtime_resume_and_get(sensor->dev);
-	if (ret < 0)
-		goto unlock;
+	if (enable) {
+		/*
+		 * Apply default & customized values
+		 * and then start streaming.
+		 */
+		ret = ar0822_start_streaming(sensor);
+		if (ret)
+			goto err_start_streaming;
+	} else {
+		ar0822_stop_streaming(sensor);
+	}
 
-	ret = ar0822_setup(sensor, state);
-	if (ret)
-		goto err_pm;
+	sensor->streaming = enable;
 
-	ret = __v4l2_ctrl_handler_setup(&sensor->ctrl_hdlr);
-	if (ret < 0)
-		goto err_pm;
+	/* vflip and hflip cannot change during streaming */
+	__v4l2_ctrl_grab(sensor->vflip, enable);
+	__v4l2_ctrl_grab(sensor->hflip, enable);
 
-	ret = ar0822_mode_stream_on(sensor);
-	if (ret)
-		goto err_pm;
-
-	ret = 0;
-
-unlock:
-	v4l2_subdev_unlock_state(state);
+	mutex_unlock(&sensor->mutex);
 
 	return ret;
 
-err_pm:
-	/*
-	 * In case of error, turn the power off synchronously as the device
-	 * likely has no other chance to recover.
-	 */
-	pm_runtime_put_sync(sensor->dev);
+err_start_streaming:
+	mutex_unlock(&sensor->mutex);
 
-	goto unlock;
+	return ret;
 }
 
 /*
