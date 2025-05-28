@@ -443,7 +443,7 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 			ar0822_test_pattern_val[ctrl->val]);
 
 		ret = cci_write(sensor->regmap, AR0822_REG_TEST_PATTERN_MODE,
-				ctrl->val, NULL);
+				ar0822_test_pattern_val[ctrl->val], NULL);
 		break;
 	case V4L2_CID_TEST_PATTERN_RED:
 		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_RED,
@@ -577,7 +577,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 				     V4L2_CID_TEST_PATTERN,
 				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 				     0, 0, ar0822_test_pattern_menu);
-	
+
 	for (unsigned int i = 0; i < 4; i++) {
 		/*
 		 * The assumption is that
