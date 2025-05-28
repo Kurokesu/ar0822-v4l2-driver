@@ -64,6 +64,17 @@
 #define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
 #define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
 
+#define AR0822_TEST_PATTERN_DISABLED 0
+#define AR0822_TEST_PATTERN_SOLID_COLOR 1
+#define AR0822_TEST_PATTERN_VERTICAL_COLOR_BARS 2
+#define AR0822_TEST_PATTERN_FADE_TO_GREY 3
+#define AR0822_TEST_PATTERN_PN9 4
+#define AR0822_TEST_PATTERN_WALKING_1S 256
+
+#define AR0822_TEST_PATTERN_COLOUR_MIN 0
+#define AR0822_TEST_PATTERN_COLOUR_MAX 0xFFF
+#define AR0822_TEST_PATTERN_COLOUR_STEP 1
+
 #define AR0822_REG_CHIP_VERSION CCI_REG16(0x3000)
 #define AR0822_REG_FRAME_LENGTH_LINES CCI_REG16(0x300A)
 #define AR0822_REG_COARSE_INTEGRATION_TIME CCI_REG16(0x3012)
@@ -71,6 +82,11 @@
 #define AR0822_REG_MODE_SELECT CCI_REG8(0x301C)
 #define AR0822_REG_IMAGE_ORIENTATION CCI_REG8(0x301D)
 #define AR0822_REG_SENSOR_GAIN CCI_REG8(0x5900)
+#define AR0822_REG_TEST_PATTERN_MODE CCI_REG16(0x3070)
+#define AR0822_REG_TEST_DATA_RED CCI_REG16(0x3072)
+#define AR0822_REG_TEST_DATA_GREENR CCI_REG16(0x3074)
+#define AR0822_REG_TEST_DATA_BLUE CCI_REG16(0x3076)
+#define AR0822_REG_TEST_DATA_GREENB CCI_REG16(0x3078)
 
 #define AR0822_REG_VT_PIX_CLK_DIV CCI_REG16(0x302A)
 #define AR0822_REG_VT_SYS_CLK_DIV CCI_REG16(0x302C)
@@ -235,19 +251,21 @@ static const struct ar0822_mode ar0822_modes[] = {
 };
 
 static const char *const ar0822_test_pattern_menu[] = {
-	"disabled",
-	"solid black",
-	"solid white",
-	"solid dark gray",
-	"solid light gray",
-	"stripes light/dark grey",
-	"stripes dark/light grey",
-	"stripes black/dark grey",
-	"stripes dark grey/black",
-	"stripes black/white",
-	"stripes white/black",
-	"horizontal color bar",
-	"vertical color bar",
+	"Disabled",
+	"Solid Color",
+	"Vertical Color Bars",
+	"Fade to Grey Vertical Color Bars",
+	"PN9",
+	"Walking 1s",
+};
+
+static const unsigned int ar0822_test_pattern_val[] = {
+	AR0822_TEST_PATTERN_DISABLED,
+	AR0822_TEST_PATTERN_SOLID_COLOR,
+	AR0822_TEST_PATTERN_VERTICAL_COLOR_BARS,
+	AR0822_TEST_PATTERN_FADE_TO_GREY,
+	AR0822_TEST_PATTERN_PN9,
+	AR0822_TEST_PATTERN_WALKING_1S,
 };
 
 typedef struct {
@@ -389,7 +407,8 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
-		dev_dbg(sensor->dev, "ar0822_set_ctrl: VBLANK %d\n",
+		dev_dbg(sensor->dev,
+			"ar0822_set_ctrl: AR0822_REG_FRAME_LENGTH_LINES %d\n",
 			sensor->mode->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
 				sensor->mode->height + ctrl->val, NULL);
@@ -419,11 +438,29 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 				sensor->hflip->val | sensor->vflip->val << 1,
 				NULL);
 		break;
+	case V4L2_CID_TEST_PATTERN:
+		dev_dbg(sensor->dev, "AR0822_REG_TEST_PATTERN_MODE %d\n",
+			ar0822_test_pattern_val[ctrl->val]);
 
-		// case V4L2_CID_TEST_PATTERN:
-		// 	ret = ar0822_set_testpattern(sensor, ctrl->val);
-		// 	break;
-
+		ret = cci_write(sensor->regmap, AR0822_REG_TEST_PATTERN_MODE,
+				ctrl->val, NULL);
+		break;
+	case V4L2_CID_TEST_PATTERN_RED:
+		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_RED,
+				ctrl->val, NULL);
+		break;
+	case V4L2_CID_TEST_PATTERN_GREENR:
+		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_GREENR,
+				ctrl->val, NULL);
+		break;
+	case V4L2_CID_TEST_PATTERN_BLUE:
+		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_BLUE,
+				ctrl->val, NULL);
+		break;
+	case V4L2_CID_TEST_PATTERN_GREENB:
+		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_GREENB,
+				ctrl->val, NULL);
+		break;
 	default:
 		dev_err(sensor->dev, "unhandled control %d\n", ctrl->id);
 		ret = -EINVAL;
@@ -536,10 +573,26 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		sensor->vflip->flags |= V4L2_CTRL_FLAG_MODIFY_LAYOUT;
 
 	/* Test pattern control */
-	// v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-	// 			     V4L2_CID_TEST_PATTERN,
-	// 			     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
-	// 			     0, 0, ar0822_test_pattern_menu);
+	v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+				     V4L2_CID_TEST_PATTERN,
+				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
+				     0, 0, ar0822_test_pattern_menu);
+	
+	for (unsigned int i = 0; i < 4; i++) {
+		/*
+		 * The assumption is that
+		 * V4L2_CID_TEST_PATTERN_GREENR == V4L2_CID_TEST_PATTERN_RED + 1
+		 * V4L2_CID_TEST_PATTERN_BLUE   == V4L2_CID_TEST_PATTERN_RED + 2
+		 * V4L2_CID_TEST_PATTERN_GREENB == V4L2_CID_TEST_PATTERN_RED + 3
+		 */
+		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+				  V4L2_CID_TEST_PATTERN_RED + i,
+				  AR0822_TEST_PATTERN_COLOUR_MIN,
+				  AR0822_TEST_PATTERN_COLOUR_MAX,
+				  AR0822_TEST_PATTERN_COLOUR_STEP,
+				  AR0822_TEST_PATTERN_COLOUR_MAX);
+		/* The "Solid color" pattern is white by default */
+	}
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
