@@ -1252,20 +1252,19 @@ error_handler_free:
 static int ar0822_power_on(struct ar0822 *sensor)
 {
 	int ret;
-	ar0822_hw_config_t *p_hw_config = &sensor->hw_config;
+	struct ar0822_hw_config *hw_config = &sensor->hw_config;
 
 	dev_dbg(sensor->dev, "%s\n", __func__);
 
-	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT,
-				    p_hw_config->supplies);
+	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT, hw_config->supplies);
 	if (ret < 0)
 		return ret;
 
-	ret = clk_prepare_enable(p_hw_config->extclk);
+	ret = clk_prepare_enable(hw_config->extclk);
 	if (ret < 0)
 		goto err_reset;
 
-	gpiod_set_value_cansleep(p_hw_config->gpio_reset, 1);
+	gpiod_set_value_cansleep(hw_config->gpio_reset, 1);
 
 	usleep_range(AR0822_RESET_MIN_DELAY_US,
 		     AR0822_RESET_MAX_DELAY_US); // TODO this can be reduced
@@ -1273,8 +1272,8 @@ static int ar0822_power_on(struct ar0822 *sensor)
 	return 0;
 
 err_reset:
-	gpiod_set_value_cansleep(p_hw_config->gpio_reset, 0);
-	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, p_hw_config->supplies);
+	gpiod_set_value_cansleep(hw_config->gpio_reset, 0);
+	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, hw_config->supplies);
 	return ret;
 }
 
@@ -1316,7 +1315,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
 	struct fwnode_handle *endpoint;
-	ar0822_hw_config_t *p_hw_config = &sensor->hw_config;
+	struct ar0822_hw_config *hw_config = &sensor->hw_config;
 	unsigned long extclk_frequency;
 	unsigned int i;
 	int ret;
@@ -1325,26 +1324,26 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	// Get the regulators
 	for (i = 0; i < AR0822_SUPPLY_AMOUNT; i++)
-		p_hw_config->supplies[i].supply = ar0822_supply_names[i];
+		hw_config->supplies[i].supply = ar0822_supply_names[i];
 
 	ret = devm_regulator_bulk_get(sensor->dev, AR0822_SUPPLY_AMOUNT,
-				      p_hw_config->supplies);
+				      hw_config->supplies);
 	if (ret)
 		return dev_err_probe(sensor->dev, ret,
 				     "failed to get supplies\n");
 
 	// Get the reset GPIO
-	p_hw_config->gpio_reset =
+	hw_config->gpio_reset =
 		devm_gpiod_get_optional(sensor->dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(p_hw_config->gpio_reset))
+	if (IS_ERR(hw_config->gpio_reset))
 		return dev_err_probe(sensor->dev,
-				     PTR_ERR(p_hw_config->gpio_reset),
+				     PTR_ERR(hw_config->gpio_reset),
 				     "failed to get reset GPIO\n");
 
 	// Get EXTCLK
-	p_hw_config->extclk = devm_clk_get(sensor->dev, "extclk");
-	if (IS_ERR(p_hw_config->extclk))
-		return dev_err_probe(sensor->dev, PTR_ERR(p_hw_config->extclk),
+	hw_config->extclk = devm_clk_get(sensor->dev, "extclk");
+	if (IS_ERR(hw_config->extclk))
+		return dev_err_probe(sensor->dev, PTR_ERR(hw_config->extclk),
 				     "failed to get EXTCLK\n");
 
 	endpoint =
@@ -1364,8 +1363,13 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	// TODO: check
 	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
 	case 2:
+		hw_config->lane_mode = AR0822_LANE_MODE_2;
+		hw_config->num_data_lanes =
+			endpoint_config.bus.mipi_csi2.num_data_lanes;
+		break;
 	case 4:
-		p_hw_config->num_data_lanes =
+		hw_config->lane_mode = AR0822_LANE_MODE_4;
+		hw_config->num_data_lanes =
 			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	default:
@@ -1386,12 +1390,11 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	 * Check if there exists a sensor mode defined for current EXTCLK,
 	 * number of lanes and given lane rate.
 	 */
-	extclk_frequency = clk_get_rate(p_hw_config->extclk);
+	extclk_frequency = clk_get_rate(hw_config->extclk);
 
 	for (i = 0; i < ARRAY_SIZE(ar0822_pll_configs); i++) {
-		if ((*ar0822_pll_configs[i].p_extclk_freq ==
-		     extclk_frequency) &&
-		    (*ar0822_pll_configs[i].p_link_freq ==
+		if ((*ar0822_pll_configs[i].extclk_freq == extclk_frequency) &&
+		    (*ar0822_pll_configs[i].link_freq ==
 		     endpoint_config.link_frequencies[0]))
 			break;
 	}
@@ -1404,13 +1407,13 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		goto done_endpoint_free;
 	}
 
-	p_hw_config->p_pll_config = &ar0822_pll_configs[i];
+	hw_config->pll_config = &ar0822_pll_configs[i];
 
 	ret = 0;
 	dev_dbg(sensor->dev,
 		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
-		extclk_frequency, *p_hw_config->p_pll_config->p_link_freq,
-		p_hw_config->num_data_lanes);
+		extclk_frequency, *hw_config->pll_config->link_freq,
+		hw_config->num_data_lanes);
 
 done_endpoint_free:
 	v4l2_fwnode_endpoint_free(&endpoint_config);
