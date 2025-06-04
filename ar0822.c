@@ -550,7 +550,7 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 	int exposure_max, exposure_def;
 
 	/* Honour the VBLANK limits when setting exposure. */
-	exposure_max = sensor->mode->height + sensor->vblank->val -
+	exposure_max = sensor->mode.info->height + sensor->vblank->val -
 		       AR0822_EXPOSURE_MIN;
 	exposure_def = min(exposure_max, sensor->exposure->val);
 	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
@@ -581,9 +581,9 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_VBLANK:
 		dev_dbg(sensor->dev,
 			"ar0822_set_ctrl: AR0822_REG_FRAME_LENGTH_LINES %d\n",
-			sensor->mode->height + ctrl->val);
+			sensor->mode.info->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-				sensor->mode->height + ctrl->val, NULL);
+				sensor->mode.info->height + ctrl->val, NULL);
 		break;
 	case V4L2_CID_EXPOSURE:
 		dev_dbg(sensor->dev,
@@ -649,24 +649,29 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 	.s_ctrl = ar0822_set_ctrl,
 };
 
+static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
+{
+	return &sensor->mode.info->timing[sensor->hw_config.lane_mode]
+					 [sensor->mode.bit_depth];
+}
+
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
 	int hblank;
-	const struct ar0822_mode *mode = sensor->mode;
-	const ar0822_pll_config_t *pll_config =
-		sensor->hw_config.p_pll_config;
+	const struct ar0822_mode_lut *mode_info = sensor->mode.info;
+	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
-	__v4l2_ctrl_modify_range(sensor->vblank, AR0822_VBLANK_MIN,
-				 AR0822_VTS_MAX - mode->height,
-				 sensor->vblank->step,
-				 pll_config->frame_length_lines_min - mode->height);
+	__v4l2_ctrl_modify_range(
+		sensor->vblank, AR0822_VBLANK_MIN,
+		AR0822_VTS_MAX - mode_info->height, sensor->vblank->step,
+		timing->frame_length_lines_min - mode_info->height);
 
 	/* Setting this will adjust the exposure limits as well */
 	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   pll_config->frame_length_lines_min - mode->height);
+			   timing->frame_length_lines_min - mode_info->height);
 
-	hblank = pll_config->line_length_pck - mode->width;
+	hblank = timing->line_length_pck_min - mode_info->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
 	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
 }
@@ -675,11 +680,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	struct ar0822_mode const *mode = sensor->mode;
-	ar0822_pll_config_t const *pll_config =
-		sensor->hw_config.p_pll_config;
+	struct ar0822_mode_lut const *mode_info = sensor->mode.info;
+	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
-	s64 const *p_link_freq = sensor->hw_config.p_pll_config->p_link_freq;
+	u8 link_freq_id = sensor->hw_config.pll_config->link_freq -
+			  ar0822_link_frequencies;
 	u32 exposure_max, exposure_def, hblank;
 	int ret;
 
@@ -694,13 +699,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
-				      p_link_freq - ar0822_link_frequencies,
-				      ar0822_link_frequencies);
+				      link_freq_id, ar0822_link_frequencies);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Exposure control */
-	exposure_max = pll_config->frame_length_lines_min - AR0822_EXPOSURE_MIN;
+	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MIN;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
 			       AR0822_EXPOSURE_DEFAULT;
@@ -716,7 +720,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 			  AR0822_ANA_GAIN_MIN);
 
 	/* Horizontal blanking control */
-	hblank = pll_config->line_length_pck - mode->width;
+	hblank = timing->line_length_pck_min - mode_info->width;
 	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					   V4L2_CID_HBLANK, hblank, hblank, 1,
 					   hblank);
@@ -726,15 +730,15 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	/* Vertical blanking control */
 	sensor->vblank = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_VBLANK,
-		AR0822_VBLANK_MIN, AR0822_VTS_MAX - mode->height,
+		AR0822_VBLANK_MIN, AR0822_VTS_MAX - mode_info->height,
 		AR0822_VBLANK_STEP,
-		pll_config->frame_length_lines_min - mode->height);
+		timing->frame_length_lines_min - mode_info->height);
 
 	/* Pixel rate control */
 	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
-				 sensor->hw_config.p_pll_config->pixel_rate,
-				 sensor->hw_config.p_pll_config->pixel_rate, 1,
-				 sensor->hw_config.p_pll_config->pixel_rate);
+				 sensor->hw_config.pll_config->pixel_rate,
+				 sensor->hw_config.pll_config->pixel_rate, 1,
+				 sensor->hw_config.pll_config->pixel_rate);
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
@@ -822,6 +826,7 @@ static int ar0822_mode_stream_off(struct ar0822 *sensor)
 static int ar0822_start_streaming(struct ar0822 *sensor)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 	int ret;
 
 	ret = pm_runtime_resume_and_get(&client->dev);
@@ -853,8 +858,8 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 
 	/* PLL config */
 	ret = cci_multi_reg_write(sensor->regmap,
-				  sensor->hw_config.p_pll_config->regs,
-				  sensor->hw_config.p_pll_config->regs_amount,
+				  sensor->hw_config.pll_config->regs,
+				  sensor->hw_config.pll_config->regs_amount,
 				  NULL);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to write PLL config: %d\n", ret);
