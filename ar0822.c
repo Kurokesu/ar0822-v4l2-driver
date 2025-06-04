@@ -957,29 +957,31 @@ err_start_streaming:
 	return ret;
 }
 
-/*
- * The supported formats.
- * This table MUST contain 4 entries per format, to cover the various flip
- * combinations in the order
- */
-static const u32 ar0822_format_codes[] = {
-	/* 12-bit modes. */
-	MEDIA_BUS_FMT_SGRBG12_1X12, /* 0: no flip */
-	MEDIA_BUS_FMT_SRGGB12_1X12, /* 1: horizontal flip */
-	MEDIA_BUS_FMT_SBGGR12_1X12, /* 2: vertical flip */
-	MEDIA_BUS_FMT_SGBRG12_1X12, /* 3: horizontal and vertical flip */
-};
-
 /* Get bayer order based on flip setting. */
-static u32 ar0822_get_format_code(struct ar0822 *sensor)
+static u32 ar0822_get_format_code(struct ar0822 *sensor,
+				  enum ar0822_bit_depth bit_depth)
 {
-	unsigned int i;
+	u32 i, format_code;
 
 	lockdep_assert_held(&sensor->mutex);
 
 	i = (sensor->vflip->val ? 2 : 0) | (sensor->hflip->val ? 1 : 0);
 
-	return ar0822_format_codes[i];
+	switch (bit_depth) {
+	case AR0822_BIT_DEPTH_10BIT:
+		format_code = ar0822_format_codes_10bit[i];
+		break;
+	case AR0822_BIT_DEPTH_12BIT:
+		format_code = ar0822_format_codes_12bit[i];
+		break;
+	default:
+		dev_err(sensor->dev, "Unsupported bit depth: %d\n", bit_depth);
+		return ar0822_format_codes_10bit[i]; // default to 10-bit
+	}
+
+	dev_dbg(sensor->dev, "%s: format code %x\n", __func__, format_code);
+
+	return format_code;
 }
 
 static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
@@ -990,12 +992,38 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 
 	struct ar0822 *sensor = to_ar0822(sd);
 
-	if (code->index != 0)
+	if (code->index >= AR0822_BIT_DEPTH_AMOUNT)
 		return -EINVAL;
 
-	code->code = ar0822_get_format_code(sensor);
+	code->code = ar0822_get_format_code(sensor, code->index);
+	pr_info("%s: index %d code %x\n", __func__, code->index, code->code);
 
 	return 0;
+}
+
+static enum ar0822_bit_depth ar0822_fmt_code_to_bit_depth(u32 code)
+{
+	enum ar0822_bit_depth bit_depth;
+
+	switch (code) {
+	case MEDIA_BUS_FMT_SGRBG10_1X10:
+	case MEDIA_BUS_FMT_SRGGB10_1X10:
+	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_SGBRG10_1X10:
+		bit_depth = AR0822_BIT_DEPTH_10BIT;
+		break;
+	case MEDIA_BUS_FMT_SGRBG12_1X12:
+	case MEDIA_BUS_FMT_SRGGB12_1X12:
+	case MEDIA_BUS_FMT_SBGGR12_1X12:
+	case MEDIA_BUS_FMT_SGBRG12_1X12:
+		bit_depth = AR0822_BIT_DEPTH_12BIT;
+		break;
+	default:
+		bit_depth = AR0822_BIT_DEPTH_AMOUNT;
+		break;
+	}
+
+	return bit_depth;
 }
 
 static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
@@ -1003,6 +1031,8 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
+	struct ar0822_mode_lut const *supported_modes =
+		sensor->hw_config.pll_config->supported_modes;
 
 	if (fse->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1010,18 +1040,23 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	if (fse->pad != IMAGE_PAD)
 		return -EINVAL;
 
-	if (fse->index >= ARRAY_SIZE(ar0822_modes))
+	if (fse->index >= sensor->hw_config.pll_config->modes_amount)
 		return -EINVAL;
+
+	enum ar0822_bit_depth bit_depth =
+		ar0822_fmt_code_to_bit_depth(fse->code);
+
+	if (fse->code != ar0822_get_format_code(sensor, bit_depth)) {
+		dev_err(sensor->dev, "Unsupported format code %x\n", fse->code);
+		return -EINVAL;
+	}
 
 	dev_dbg(sensor->dev, "%s: index %d code %x\n", __func__, fse->index,
 		fse->code);
 
-	if (fse->code != ar0822_get_format_code(sensor))
-		return -EINVAL;
-
-	fse->min_width = ar0822_modes[fse->index].width;
+	fse->min_width = supported_modes[fse->index].width;
 	fse->max_width = fse->min_width;
-	fse->min_height = ar0822_modes[fse->index].height;
+	fse->min_height = supported_modes[fse->index].height;
 	fse->max_height = fse->min_height;
 
 	return 0;
@@ -1030,8 +1065,9 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 static void ar0822_set_default_format(struct ar0822 *sensor)
 {
 	/* Set default mode to max resolution */
-	sensor->mode = &ar0822_modes[0];
-	sensor->fmt_code = MEDIA_BUS_FMT_SGRBG12_1X12;
+	sensor->mode.info = &sensor->hw_config.pll_config->supported_modes[0];
+	sensor->mode.bit_depth = AR0822_BIT_DEPTH_10BIT;
+	sensor->fmt_code = ar0822_format_codes_10bit[0];
 }
 
 static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
@@ -1044,7 +1080,7 @@ static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
 }
 
 static void ar0822_update_image_pad_format(struct ar0822 *sensor,
-					   const struct ar0822_mode *mode,
+					   const struct ar0822_mode_lut *mode,
 					   struct v4l2_subdev_format *fmt)
 {
 	fmt->format.width = mode->width;
@@ -1071,6 +1107,9 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
 
+	dev_dbg(sensor->dev, "%s: pad %d which %d\n", __func__, fmt->pad,
+		fmt->which);
+
 	mutex_lock(&sensor->mutex);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -1083,7 +1122,14 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 			goto mutex_release;
 		}
 
-		try_fmt->code = ar0822_get_format_code(sensor);
+		dev_dbg(sensor->dev, "%s: try fmt w %d h %d code %x\n",
+			__func__, try_fmt->width, try_fmt->height,
+			try_fmt->code);
+
+		enum ar0822_bit_depth bit_depth =
+			ar0822_fmt_code_to_bit_depth(try_fmt->code);
+
+		try_fmt->code = ar0822_get_format_code(sensor, bit_depth);
 		fmt->format = *try_fmt;
 	} else {
 		if (fmt->pad != IMAGE_PAD) {
@@ -1091,8 +1137,12 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 			goto mutex_release;
 		}
 
-		ar0822_update_image_pad_format(sensor, sensor->mode, fmt);
-		fmt->format.code = ar0822_get_format_code(sensor);
+		ar0822_update_image_pad_format(sensor, sensor->mode.info, fmt);
+		fmt->format.code =
+			ar0822_get_format_code(sensor, sensor->mode.bit_depth);
+		dev_dbg(sensor->dev, "%s: active fmt w %d h %d code %x\n",
+			__func__, fmt->format.width, fmt->format.height,
+			fmt->format.code);
 	}
 
 mutex_release:
@@ -1105,26 +1155,49 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	const struct ar0822_mode *mode;
+	struct ar0822_mode_lut const *mode;
 	struct v4l2_mbus_framefmt *framefmt;
+	enum ar0822_bit_depth bit_depth;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
 
+	dev_dbg(sensor->dev, "%s: req w %d h %d format code %x\n", __func__,
+		fmt->format.width, fmt->format.height, fmt->format.code);
+
+	bit_depth = ar0822_fmt_code_to_bit_depth(fmt->format.code);
+	if (bit_depth == AR0822_BIT_DEPTH_AMOUNT) {
+		dev_err(sensor->dev, "Unsupported format code: %x\n",
+			fmt->format.code);
+		return -EINVAL;
+	}
+
 	mutex_lock(&sensor->mutex);
 
-	fmt->format.code = ar0822_get_format_code(sensor);
+	fmt->format.code = ar0822_get_format_code(sensor, bit_depth);
 
-	mode = v4l2_find_nearest_size(ar0822_modes, ARRAY_SIZE(ar0822_modes),
-				      width, height, fmt->format.width,
-				      fmt->format.height);
+	mode = v4l2_find_nearest_size(
+		sensor->hw_config.pll_config->supported_modes,
+		sensor->hw_config.pll_config->modes_amount, width, height,
+		fmt->format.width, fmt->format.height);
+
+	dev_dbg(sensor->dev, "%s: found mode w %d h %d\n", __func__,
+		mode->width, mode->height);
+
 	ar0822_update_image_pad_format(sensor, mode, fmt);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		framefmt = v4l2_subdev_state_get_format(state, fmt->pad);
 		*framefmt = fmt->format;
-	} else if (sensor->mode != mode) {
-		sensor->mode = mode;
+	} else if ((sensor->mode.info != mode) ||
+		   (sensor->mode.bit_depth != bit_depth) ||
+		   (sensor->fmt_code != fmt->format.code)) {
+		sensor->mode.info = mode;
+		sensor->mode.bit_depth = bit_depth;
 		sensor->fmt_code = fmt->format.code;
+		dev_dbg(sensor->dev,
+			"%s: set mode %dx%d bit_depth %d code %x\n", __func__,
+			sensor->mode.info->width, sensor->mode.info->height,
+			sensor->mode.bit_depth, sensor->fmt_code);
 		ar0822_set_framing_limits(sensor);
 	}
 
@@ -1141,7 +1214,7 @@ __ar0822_get_pad_crop(struct ar0822 *sensor, struct v4l2_subdev_state *sd_state,
 	case V4L2_SUBDEV_FORMAT_TRY:
 		return v4l2_subdev_state_get_crop(sd_state, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
-		return &sensor->mode->crop;
+		return &sensor->mode.info->crop;
 	}
 
 	return NULL;
