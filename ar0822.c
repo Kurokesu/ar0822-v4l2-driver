@@ -875,20 +875,31 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	}
 
 	/* Mode init */
+	ret = cci_multi_reg_write(sensor->regmap, sensor->mode.info->regs,
+				  sensor->mode.info->regs_amount, NULL);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to write mode config: %d\n", ret);
+		return ret;
+	}
+
 	ret = cci_write(sensor->regmap, AR0822_REG_LINE_LENGTH_PCK,
-			sensor->hw_config.p_pll_config->line_length_pck, NULL);
+			timing->line_length_pck_min, NULL);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to set line length: %d\n", ret);
 		return ret;
 	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-			sensor->hw_config.p_pll_config->frame_length_lines_min, NULL);
+			timing->frame_length_lines_min, NULL);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to set frame length: %d\n", ret);
 		return ret;
 	}
 
+	dev_dbg(sensor->dev, "%s: w %d h %d fmt_code %x llp %d fll %d\n",
+		__func__, sensor->mode.info->width, sensor->mode.info->height,
+		sensor->fmt_code, timing->line_length_pck_min,
+		timing->frame_length_lines_min);
 	// { AR0822_REG_COARSE_INTEGRATION_TIME, 0x017C },
 
 	usleep_range(1000, 1100);
