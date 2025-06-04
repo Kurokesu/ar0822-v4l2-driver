@@ -45,6 +45,7 @@
 
 #define AR0822_EXPOSURE_MIN 4 // ?
 #define AR0822_EXPOSURE_STEP 1
+#define AR0822_EXPOSURE_DEFAULT 0x0640
 
 #define AR0822_ANA_GAIN_MIN 0
 #define AR0822_ANA_GAIN_MAX 232
@@ -135,40 +136,13 @@
 #define AR0822_REG_MIPI_F4_PDT CCI_REG16(0x334E)
 #define AR0822_REG_MIPI_F4_VC CCI_REG16(0x3350)
 
-enum pad_types { IMAGE_PAD, NUM_PADS };
+#define AR0822_MIPI_TIMING_REG_AMOUNT 10
+#define AR0822_FLL_1080P_MIN 1104
+#define AR0822_FLL_4K_MIN 2184
 
-static const char *const ar0822_supply_names[] = {
-	"vana", /* Analog (2.8V) supply */
-	"vdig", /* Digital Core (1.8V) supply */
-	"vddl", /* IF (1.2V) supply */
-};
-
-#define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
-
-enum ar0822_extclk_link_id {
-	AR0822_EXTCLK_LINK_ID_24_480 = 0,
-	AR0822_EXTCLK_LINK_ID_24_960,
-};
-
-static const u64 ar0822_extclk_frequencies[] = {
-	[AR0822_EXTCLK_LINK_ID_24_480] = 24000000,
-	[AR0822_EXTCLK_LINK_ID_24_960] = 24000000,
-};
-
-static const s64 ar0822_link_frequencies[] = {
-	[AR0822_EXTCLK_LINK_ID_24_480] = 480000000,
-	[AR0822_EXTCLK_LINK_ID_24_960] = 960000000,
-};
-
-enum ar0822_bit_depth {
-	AR0822_BIT_DEPTH_10BIT = 0,
-	AR0822_BIT_DEPTH_12BIT,
-	AR0822_BIT_DEPTH_AMOUNT,
-};
-
-static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_AMOUNT] = {
-	[AR0822_BIT_DEPTH_10BIT] = MEDIA_BUS_FMT_SGRBG10_1X10,
-	[AR0822_BIT_DEPTH_12BIT] = MEDIA_BUS_FMT_SGRBG12_1X12,
+struct ar0822_timing {
+	unsigned int line_length_pck_min;
+	unsigned int frame_length_lines_min;
 };
 
 enum ar0822_lane_mode {
@@ -177,9 +151,10 @@ enum ar0822_lane_mode {
 	AR0822_LANE_MODE_AMOUNT,
 };
 
-struct ar0822_timing {
-	unsigned int line_length_pck_min;
-	unsigned int frame_length_lines_min;
+enum ar0822_bit_depth {
+	AR0822_BIT_DEPTH_10BIT = 0,
+	AR0822_BIT_DEPTH_12BIT,
+	AR0822_BIT_DEPTH_AMOUNT,
 };
 
 struct ar0822_mode_lut {
@@ -200,6 +175,74 @@ struct ar0822_pll_config {
 	struct cci_reg_sequence const *regs;
 	struct ar0822_mode_lut const *supported_modes;
 	u32 modes_amount;
+	struct cci_reg_sequence const (
+		*mipi_regs)[AR0822_MIPI_TIMING_REG_AMOUNT];
+};
+
+static const char *const ar0822_supply_names[] = {
+	"vana", /* Analog (2.8V) supply */
+	"vdig", /* Digital Core (1.8V) supply */
+	"vddl", /* IF (1.2V) supply */
+};
+
+#define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
+
+struct ar0822_hw_config {
+	struct clk *extclk;
+	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
+	struct gpio_desc *gpio_reset;
+	struct ar0822_pll_config const *pll_config;
+	unsigned int num_data_lanes;
+	enum ar0822_lane_mode lane_mode;
+};
+
+struct ar0822_mode {
+	struct ar0822_mode_lut const *info;
+	enum ar0822_bit_depth bit_depth;
+};
+
+struct ar0822 {
+	struct device *dev;
+	struct ar0822_hw_config hw_config;
+
+	struct regmap *regmap;
+
+	struct v4l2_subdev subdev;
+	struct media_pad pad;
+
+	struct v4l2_ctrl_handler ctrl_hdlr;
+	struct v4l2_ctrl *vblank;
+	struct v4l2_ctrl *hblank;
+	struct v4l2_ctrl *hflip;
+	struct v4l2_ctrl *vflip;
+	struct v4l2_ctrl *exposure;
+
+	struct mutex mutex;
+	bool streaming;
+	struct ar0822_mode mode;
+	unsigned int fmt_code;
+};
+
+enum pad_types { IMAGE_PAD, NUM_PADS };
+
+enum ar0822_extclk_link_id {
+	AR0822_EXTCLK_LINK_ID_24_480 = 0,
+	AR0822_EXTCLK_LINK_ID_24_960,
+};
+
+static const u64 ar0822_extclk_frequencies[] = {
+	[AR0822_EXTCLK_LINK_ID_24_480] = 24000000,
+	[AR0822_EXTCLK_LINK_ID_24_960] = 24000000,
+};
+
+static const s64 ar0822_link_frequencies[] = {
+	[AR0822_EXTCLK_LINK_ID_24_480] = 480000000,
+	[AR0822_EXTCLK_LINK_ID_24_960] = 960000000,
+};
+
+static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_AMOUNT] = {
+	[AR0822_BIT_DEPTH_10BIT] = MEDIA_BUS_FMT_SGRBG10_1X10,
+	[AR0822_BIT_DEPTH_12BIT] = MEDIA_BUS_FMT_SGRBG12_1X12,
 };
 
 static const struct cci_reg_sequence ar0822_pll_config_24_480[] = {
