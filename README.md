@@ -172,15 +172,15 @@ Run the following command to list available cameras:
 rpicam-hello --list-cameras
 ```
 
-You should see output similar to this:
+You should see output similar to this (depending on your link-frequency and lane amount selection):
 ```
 Available cameras
 -----------------
-0 : ar0822 [1920x1200 10-bit GRBG] (/base/soc/i2c0mux/i2c@0/ar0822@10)
-   Modes: 'SGRBG10_CSI2P' : 1280x800 [90.11 fps - (314, 190)/1280x800 crop]
-                            1920x1200 [60.47 fps - (0, 0)/1920x1200 crop]
-          'SGRBG8' : 1280x800 [90.11 fps - (314, 190)/1280x800 crop]
-                     1920x1200 [60.47 fps - (0, 0)/1920x1200 crop]
+0 : ar0822 [3840x2160 12-bit GRBG] (/base/soc/i2c0mux/i2c@0/ar0822@10)
+    Modes: 'SGRBG10_CSI2P' : 1920x1080 [60.08 fps - (0, 0)/1920x1080 crop]
+                             3840x2160 [41.11 fps - (0, 0)/3840x2160 crop]
+           'SGRBG12_CSI2P' : 1920x1080 [60.18 fps - (0, 0)/1920x1080 crop]
+                             3840x2160 [34.79 fps - (0, 0)/3840x2160 crop]
 ```
 
 ## Special Thanks
