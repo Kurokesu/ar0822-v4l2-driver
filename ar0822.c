@@ -1,3 +1,4 @@
+#define DEBUG
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the OnSemi AR0822 CMOS Image Sensor.
@@ -545,8 +546,6 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	int ret = 0;
 
-	dev_dbg(sensor->dev, "ar0822_set_ctrl: %d %d\n", ctrl->id, ctrl->val);
-
 	if (ctrl->id == V4L2_CID_VBLANK)
 		ar0822_adjust_exposure_range(sensor);
 
@@ -675,7 +674,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	mutex_init(&sensor->mutex);
 	sensor->ctrl_hdlr.lock = &sensor->mutex;
 
-	/* Link frequency control */
+	/* Link frequency (read only) */
 	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
@@ -785,16 +784,12 @@ error:
 
 static int ar0822_mode_stream_on(struct ar0822 *sensor)
 {
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
 	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
 			 AR0822_MODE_SELECT_STREAM_ON, NULL);
 }
 
 static int ar0822_mode_stream_off(struct ar0822 *sensor)
 {
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
 	return cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
 			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
 }
@@ -808,8 +803,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	ret = pm_runtime_resume_and_get(&client->dev);
 	if (ret < 0)
 		return ret;
-
-	dev_dbg(sensor->dev, "%s: setting up sensor\n", __func__);
 
 	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_STREAM_ON,
 			NULL);
@@ -901,19 +894,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		dev_err(sensor->dev, "Failed to set line length: %d\n", ret);
 		return ret;
 	}
-
-	// ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-	// 		timing->frame_length_lines_min, NULL);
-	// if (ret) {
-	// 	dev_err(sensor->dev, "Failed to set frame length: %d\n", ret);
-	// 	return ret;
-	// }
-
-	dev_dbg(sensor->dev, "%s: w %d h %d fmt_code %x llp %d fll %d\n",
-		__func__, sensor->mode.info->width, sensor->mode.info->height,
-		sensor->fmt_code, timing->line_length_pck_min,
-		timing->frame_length_lines_min);
-	// { AR0822_REG_COARSE_INTEGRATION_TIME, 0x017C },
 
 	usleep_range(1000, 1100);
 
@@ -1121,9 +1101,6 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 		ar0822_update_image_pad_format(sensor, sensor->mode.info, fmt);
 		fmt->format.code =
 			ar0822_get_format_code(sensor, sensor->fmt_code);
-		dev_dbg(sensor->dev, "%s: active fmt w %d h %d code %x\n",
-			__func__, fmt->format.width, fmt->format.height,
-			fmt->format.code);
 	}
 
 mutex_release:
@@ -1162,10 +1139,6 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 		sensor->mode.info = mode;
 		ar0822_get_bit_depth(fmt->format.code, &sensor->mode.bit_depth);
 		sensor->fmt_code = fmt->format.code;
-		dev_dbg(sensor->dev,
-			"%s: set mode %dx%d bit_depth %d code %x\n", __func__,
-			sensor->mode.info->width, sensor->mode.info->height,
-			sensor->mode.bit_depth, sensor->fmt_code);
 		ar0822_set_framing_limits(sensor);
 	}
 
@@ -1473,7 +1446,7 @@ static int ar0822_probe(struct i2c_client *client)
 
 	sensor->dev = &client->dev;
 
-	dev_dbg(sensor->dev, "probing AR0822 sensor\n");
+	dev_dbg(sensor->dev, "Probing AR0822 sensor\n");
 
 	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
 
@@ -1519,8 +1492,6 @@ static int ar0822_probe(struct i2c_client *client)
 	 */
 	pm_runtime_mark_last_busy(sensor->dev);
 	pm_runtime_put_autosuspend(sensor->dev);
-
-	dev_dbg(sensor->dev, "AR0822 sensor probed successfully\n");
 
 	return 0;
 
