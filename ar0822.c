@@ -28,7 +28,6 @@
 #define AR0822_EMBEDDED_LINE_WIDTH 16384
 #define AR0822_NUM_EMBEDDED_LINES 0
 
-#define AR0822_VBLANK_MIN 24
 #define AR0822_VBLANK_STEP 8
 
 #define AR0822_VTS_MAX 0xFFFF
@@ -641,7 +640,8 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 
 	/* Update limits and set FPS to default */
 	__v4l2_ctrl_modify_range(
-		sensor->vblank, AR0822_VBLANK_MIN,
+		sensor->vblank,
+		timing->frame_length_lines_min - mode_info->height,
 		AR0822_VTS_MAX - mode_info->height, sensor->vblank->step,
 		timing->frame_length_lines_min - mode_info->height);
 
@@ -708,8 +708,8 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	/* Vertical blanking control */
 	sensor->vblank = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_VBLANK,
-		AR0822_VBLANK_MIN, AR0822_VTS_MAX - mode_info->height,
-		AR0822_VBLANK_STEP,
+		timing->frame_length_lines_min - mode_info->height,
+		AR0822_VTS_MAX - mode_info->height, AR0822_VBLANK_STEP,
 		timing->frame_length_lines_min - mode_info->height);
 
 	/* Pixel rate control */
