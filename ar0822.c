@@ -1,4 +1,3 @@
-#define DEBUG
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the OnSemi AR0822 CMOS Image Sensor.
@@ -299,19 +298,19 @@ static const struct ar0822_mode_lut ar0822_modes_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 1464,
 			},
 			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
 				.line_length_pck_min = 2142,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 1240,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
 				.line_length_pck_min = 1012,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 2632,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
 				.line_length_pck_min = 1180,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 2248,
 			},
 		},
 	},
@@ -362,19 +361,19 @@ static const struct ar0822_mode_lut ar0822_modes_24_960[] = {
 		.timing = {
 			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
 				.line_length_pck_min = 982,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 2712,
 			},
 			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
-				.line_length_pck_min = 1206,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.line_length_pck_min = 1146,
+				.frame_length_lines_min = 2320,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
 				.line_length_pck_min = 792,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 3360,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
 				.line_length_pck_min = 792,
-				.frame_length_lines_min = AR0822_FLL_1080P_MIN,
+				.frame_length_lines_min = 3360,
 			},
 		},
 	},
@@ -399,7 +398,7 @@ static const struct ar0822_mode_lut ar0822_modes_24_960[] = {
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
-				.line_length_pck_min = 982,
+				.line_length_pck_min = 1220,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
 			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
