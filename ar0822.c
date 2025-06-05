@@ -516,7 +516,6 @@ static const unsigned int ar0822_test_pattern_val[] = {
 
 static const struct cci_reg_sequence ar0822_init_table[] = {
 	// { AR0822_REG_T1_PIX_DEF_ID2, 0x37C3 },
-	{ AR0822_REG_SERIAL_FORMAT, 0x0202 }, // 2 lane MIPI
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 };
@@ -882,13 +881,18 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	}
 
 	/* Serial format */
-	dev_dbg(sensor->dev, "Bit depth %x\n",
-		((u16)bit_depth << 8) | bit_depth);
+	ret = cci_write(sensor->regmap, AR0822_REG_SERIAL_FORMAT,
+			(0x0200 | sensor->hw_config.num_data_lanes), NULL);
+	if (ret) {
+		dev_err(sensor->dev, "Failed to set serial format: %d\n", ret);
+		return ret;
+	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
 			(((u16)bit_depth << 8) | bit_depth), NULL);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to write format: %d\n", ret);
+		return ret;
 	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_LINE_LENGTH_PCK,
