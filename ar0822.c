@@ -68,6 +68,7 @@
 #define AR0822_TEST_PATTERN_PN9 4
 #define AR0822_TEST_PATTERN_WALKING_1S 256
 
+#define AR0822_TEST_SOLID_COLOR_CTRL_AMOUNT 4
 #define AR0822_TEST_PATTERN_COLOR_MIN 0
 #define AR0822_TEST_PATTERN_COLOR_MAX 0xFFF
 #define AR0822_TEST_PATTERN_COLOR_STEP 1
@@ -78,7 +79,7 @@
 #define AR0822_REG_RESET CCI_REG16(0x301A)
 #define AR0822_REG_MODE_SELECT CCI_REG8(0x301C)
 #define AR0822_REG_IMAGE_ORIENTATION CCI_REG8(0x301D)
-#define AR0822_REG_SENSOR_GAIN CCI_REG8(0x5900)
+#define AR0822_REG_SENSOR_GAIN CCI_REG16(0x5900)
 #define AR0822_REG_TEST_PATTERN_MODE CCI_REG16(0x3070)
 #define AR0822_REG_TEST_DATA_RED CCI_REG16(0x3072)
 #define AR0822_REG_TEST_DATA_GREENR CCI_REG16(0x3074)
@@ -135,46 +136,57 @@
 #define AR0822_REG_MIPI_F4_PDT CCI_REG16(0x334E)
 #define AR0822_REG_MIPI_F4_VC CCI_REG16(0x3350)
 
-#define AR0822_MIPI_TIMING_REG_AMOUNT 10
 #define AR0822_FLL_4K_MIN 2184
+
+/* Helper macro for declaring ar0822 reg sequence */
+#define AR0822_REG_SEQ(_reg_array)                                      \
+	{                                                               \
+		.regs = (_reg_array), .amount = ARRAY_SIZE(_reg_array), \
+	}
 
 struct ar0822_timing {
 	unsigned int line_length_pck_min;
 	unsigned int frame_length_lines_min;
 };
 
-enum ar0822_lane_mode {
-	AR0822_LANE_MODE_2 = 0,
-	AR0822_LANE_MODE_4,
-	AR0822_LANE_MODE_AMOUNT,
+enum ar0822_lane_mode_id {
+	AR0822_LANE_MODE_ID_2 = 0,
+	AR0822_LANE_MODE_ID_4,
+	AR0822_LANE_MODE_ID_AMOUNT,
 };
 
-enum ar0822_bit_depth {
-	AR0822_BIT_DEPTH_10BIT = 0,
-	AR0822_BIT_DEPTH_12BIT,
-	AR0822_BIT_DEPTH_AMOUNT,
+enum ar0822_bit_depth_id {
+	AR0822_BIT_DEPTH_ID_10BIT = 0,
+	AR0822_BIT_DEPTH_ID_12BIT,
+	AR0822_BIT_DEPTH_ID_AMOUNT,
 };
 
-struct ar0822_mode_lut {
+struct ar0822_reg_sequence {
+	unsigned int amount;
+	struct cci_reg_sequence const *regs;
+};
+
+struct ar0822_format {
 	unsigned int width;
 	unsigned int height;
 	struct v4l2_rect crop;
-	struct ar0822_timing timing[AR0822_LANE_MODE_AMOUNT]
-				   [AR0822_BIT_DEPTH_AMOUNT];
-	struct cci_reg_sequence const *regs;
-	unsigned int regs_amount;
+
+	struct ar0822_timing timing[AR0822_LANE_MODE_ID_AMOUNT]
+				   [AR0822_BIT_DEPTH_ID_AMOUNT];
+
+	struct ar0822_reg_sequence reg_sequence;
 };
 
 struct ar0822_pll_config {
-	s64 const *link_freq;
-	u64 const *extclk_freq;
+	s64 const *freq_link;
+	u64 const *freq_extclk;
 	unsigned long pixel_rate;
-	unsigned int regs_amount;
-	struct cci_reg_sequence const *regs;
-	struct ar0822_mode_lut const *supported_modes;
-	u32 modes_amount;
-	struct cci_reg_sequence const (
-		*mipi_regs)[AR0822_MIPI_TIMING_REG_AMOUNT];
+
+	unsigned int formats_amount;
+	struct ar0822_format const *formats;
+
+	struct ar0822_reg_sequence regs_pll;
+	struct ar0822_reg_sequence regs_mipi[AR0822_BIT_DEPTH_ID_AMOUNT];
 };
 
 static const char *const ar0822_supply_names[] = {
@@ -189,19 +201,19 @@ struct ar0822_hw_config {
 	struct clk *extclk;
 	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
 	struct gpio_desc *gpio_reset;
-	struct ar0822_pll_config const *pll_config;
 	unsigned int num_data_lanes;
-	enum ar0822_lane_mode lane_mode;
+	enum ar0822_lane_mode_id lane_mode;
 };
 
 struct ar0822_mode {
-	struct ar0822_mode_lut const *info;
-	enum ar0822_bit_depth bit_depth;
+	struct ar0822_format const *format;
+	enum ar0822_bit_depth_id bit_depth;
 };
 
 struct ar0822 {
 	struct device *dev;
 	struct ar0822_hw_config hw_config;
+	struct ar0822_pll_config const *pll_config;
 
 	struct regmap *regmap;
 
@@ -238,9 +250,9 @@ static const s64 ar0822_link_frequencies[] = {
 	[AR0822_EXTCLK_LINK_ID_24_960] = 960000000,
 };
 
-static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_AMOUNT] = {
-	[AR0822_BIT_DEPTH_10BIT] = MEDIA_BUS_FMT_SGRBG10_1X10,
-	[AR0822_BIT_DEPTH_12BIT] = MEDIA_BUS_FMT_SGRBG12_1X12,
+static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_ID_AMOUNT] = {
+	[AR0822_BIT_DEPTH_ID_10BIT] = MEDIA_BUS_FMT_SGRBG10_1X10,
+	[AR0822_BIT_DEPTH_ID_12BIT] = MEDIA_BUS_FMT_SGRBG12_1X12,
 };
 
 static const struct cci_reg_sequence ar0822_pll_config_24_480[] = {
@@ -281,7 +293,7 @@ static const struct cci_reg_sequence ar0822_4k_config[] = {
 	{ AR0822_REG_Y_OUTPUT_CONTROL, 2160 },
 };
 
-static const struct ar0822_mode_lut ar0822_modes_24_480[] = {
+static const struct ar0822_format ar0822_formats_24_480[] = {
 	{
 		.width = 1920,
 		.height = 1080,
@@ -291,26 +303,25 @@ static const struct ar0822_mode_lut ar0822_modes_24_480[] = {
 			.width = 1920,
 			.height = 1080,
 		},
-		.regs = ar0822_1080p_config,
-		.regs_amount = ARRAY_SIZE(ar0822_1080p_config),
 		.timing = {
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
 				.frame_length_lines_min = 1464,
 			},
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2142,
 				.frame_length_lines_min = 1240,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1012,
 				.frame_length_lines_min = 2632,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1180,
 				.frame_length_lines_min = 2248,
 			},
 		},
+		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
 	},
 	{
 		.width = 3840,
@@ -321,30 +332,29 @@ static const struct ar0822_mode_lut ar0822_modes_24_480[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.regs = ar0822_4k_config,
-		.regs_amount = ARRAY_SIZE(ar0822_4k_config),
 		.timing = {
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 4062,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2140,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
 		},
+		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
 	},
 };
 
-static const struct ar0822_mode_lut ar0822_modes_24_960[] = {
+static const struct ar0822_format ar0822_formats_24_960[] = {
 	{
 		.width = 1920,
 		.height = 1080,
@@ -354,26 +364,25 @@ static const struct ar0822_mode_lut ar0822_modes_24_960[] = {
 			.width = 1920,
 			.height = 1080,
 		},
-		.regs = ar0822_1080p_config,
-		.regs_amount = ARRAY_SIZE(ar0822_1080p_config),
 		.timing = {
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 982,
 				.frame_length_lines_min = 2712,
 			},
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
 				.frame_length_lines_min = 2320,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 792,
 				.frame_length_lines_min = 3360,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 792,
 				.frame_length_lines_min = 3360,
 			},
 		},
+		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
 	},
 	{
 		.width = 3840,
@@ -384,113 +393,108 @@ static const struct ar0822_mode_lut ar0822_modes_24_960[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.regs = ar0822_4k_config,
-		.regs_amount = ARRAY_SIZE(ar0822_4k_config),
 		.timing = {
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1782,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_2][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2106,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_10BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1220,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
-			[AR0822_LANE_MODE_4][AR0822_BIT_DEPTH_12BIT] = {
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
 				.frame_length_lines_min = AR0822_FLL_4K_MIN,
 			},
 		},
+		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
 	},
 };
 
-static const struct cci_reg_sequence ar0822_mipi_timing_24_480[][AR0822_MIPI_TIMING_REG_AMOUNT] =
-{
-	[AR0822_BIT_DEPTH_10BIT] = 
-	{
-		{ AR0822_REG_FRAME_PREAMBLE, 0x007D },
-		{ AR0822_REG_LINE_PREAMBLE, 0x0054 },
-		{ AR0822_REG_MIPI_TIMING_0, 0x6249 },
-		{ AR0822_REG_MIPI_TIMING_1, 0x52C9 },
-		{ AR0822_REG_MIPI_TIMING_2, 0x80CB },
-		{ AR0822_REG_MIPI_TIMING_3, 0x030C },
-		{ AR0822_REG_MIPI_TIMING_4, 0x0E8A },
-		{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AF7 },
-		{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00B5 },
-		{ AR0822_REG_MIPI_F1_PDT, 0x122B },
-	},
-	[AR0822_BIT_DEPTH_12BIT] =
-	{
-		{ AR0822_REG_FRAME_PREAMBLE, 0x006C },
-		{ AR0822_REG_LINE_PREAMBLE, 0x004A },
-		{ AR0822_REG_MIPI_TIMING_0, 0x51C8 },
-		{ AR0822_REG_MIPI_TIMING_1, 0x5248 },
-		{ AR0822_REG_MIPI_TIMING_2, 0x70CA },
-		{ AR0822_REG_MIPI_TIMING_3, 0x028A },
-		{ AR0822_REG_MIPI_TIMING_4, 0x0C08 },
-		{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AEC },
-		{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00A7 },
-		{ AR0822_REG_MIPI_F1_PDT, 0x122C },
-	},
+static const struct cci_reg_sequence ar0822_mipi_timing_24_480_10bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x007D },
+	{ AR0822_REG_LINE_PREAMBLE, 0x0054 },
+	{ AR0822_REG_MIPI_TIMING_0, 0x6249 },
+	{ AR0822_REG_MIPI_TIMING_1, 0x52C9 },
+	{ AR0822_REG_MIPI_TIMING_2, 0x80CB },
+	{ AR0822_REG_MIPI_TIMING_3, 0x030C },
+	{ AR0822_REG_MIPI_TIMING_4, 0x0E8A },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AF7 },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00B5 },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122B },
 };
 
-static const struct cci_reg_sequence ar0822_mipi_timing_24_960[][AR0822_MIPI_TIMING_REG_AMOUNT] =
-{
-	[AR0822_BIT_DEPTH_10BIT] = 
-	{
-		{ AR0822_REG_FRAME_PREAMBLE, 0x00D9 },
-		{ AR0822_REG_LINE_PREAMBLE, 0x008D },
-		{ AR0822_REG_MIPI_TIMING_0, 0xA3D0 },
-		{ AR0822_REG_MIPI_TIMING_1, 0x9553 },
-		{ AR0822_REG_MIPI_TIMING_2, 0xF0D1 },
-		{ AR0822_REG_MIPI_TIMING_3, 0x0598 },
-		{ AR0822_REG_MIPI_TIMING_4, 0x1D13 },
-		{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0B3A },
-		{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x0107 },
-		{ AR0822_REG_MIPI_F1_PDT, 0x122B },
-	},
-	[AR0822_BIT_DEPTH_12BIT] =
-	{
-		{ AR0822_REG_FRAME_PREAMBLE, 0x00B8 },
-		{ AR0822_REG_LINE_PREAMBLE, 0x0079 },
-		{ AR0822_REG_MIPI_TIMING_0, 0x830E },
-		{ AR0822_REG_MIPI_TIMING_1, 0x8451 },
-		{ AR0822_REG_MIPI_TIMING_2, 0xD0CE },
-		{ AR0822_REG_MIPI_TIMING_3, 0x0494 },
-		{ AR0822_REG_MIPI_TIMING_4, 0x1810 },
-		{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0B23 },
-		{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00EB },
-		{ AR0822_REG_MIPI_F1_PDT, 0x122C },
-	},
+static const struct cci_reg_sequence ar0822_mipi_timing_24_480_12bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x006C },
+	{ AR0822_REG_LINE_PREAMBLE, 0x004A },
+	{ AR0822_REG_MIPI_TIMING_0, 0x51C8 },
+	{ AR0822_REG_MIPI_TIMING_1, 0x5248 },
+	{ AR0822_REG_MIPI_TIMING_2, 0x70CA },
+	{ AR0822_REG_MIPI_TIMING_3, 0x028A },
+	{ AR0822_REG_MIPI_TIMING_4, 0x0C08 },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AEC },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00A7 },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
+};
+
+static const struct cci_reg_sequence ar0822_mipi_timing_24_960_10bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x00D9 },
+	{ AR0822_REG_LINE_PREAMBLE, 0x008D },
+	{ AR0822_REG_MIPI_TIMING_0, 0xA3D0 },
+	{ AR0822_REG_MIPI_TIMING_1, 0x9553 },
+	{ AR0822_REG_MIPI_TIMING_2, 0xF0D1 },
+	{ AR0822_REG_MIPI_TIMING_3, 0x0598 },
+	{ AR0822_REG_MIPI_TIMING_4, 0x1D13 },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0B3A },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x0107 },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122B },
+};
+
+static const struct cci_reg_sequence ar0822_mipi_timing_24_960_12bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x00B8 },
+	{ AR0822_REG_LINE_PREAMBLE, 0x0079 },
+	{ AR0822_REG_MIPI_TIMING_0, 0x830E },
+	{ AR0822_REG_MIPI_TIMING_1, 0x8451 },
+	{ AR0822_REG_MIPI_TIMING_2, 0xD0CE },
+	{ AR0822_REG_MIPI_TIMING_3, 0x0494 },
+	{ AR0822_REG_MIPI_TIMING_4, 0x1810 },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0B23 },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00EB },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
 };
 
 static const struct ar0822_pll_config ar0822_pll_configs[] = {
 	{
-		.link_freq =
+		.freq_link =
 			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
-		.extclk_freq =
+		.freq_extclk =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
 		.pixel_rate = AR0822_PIXEL_RATE,
-		.regs_amount = ARRAY_SIZE(ar0822_pll_config_24_480),
-		.regs = ar0822_pll_config_24_480,
-		.supported_modes = ar0822_modes_24_480,
-		.modes_amount = ARRAY_SIZE(ar0822_modes_24_480),
-		.mipi_regs = ar0822_mipi_timing_24_480,
+		.formats = ar0822_formats_24_480,
+		.formats_amount = ARRAY_SIZE(ar0822_formats_24_480),
+		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_480),
+		.regs_mipi = {
+			[AR0822_BIT_DEPTH_ID_10BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_480_10bit),
+			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_480_12bit),
+		},
 	},
 	{
-		.link_freq =
+		.freq_link =
 			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
-		.extclk_freq =
+		.freq_extclk =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
 		.pixel_rate = AR0822_PIXEL_RATE,
-		.regs_amount = ARRAY_SIZE(ar0822_pll_config_24_960),
-		.regs = ar0822_pll_config_24_960,
-		.supported_modes = ar0822_modes_24_960,
-		.modes_amount = ARRAY_SIZE(ar0822_modes_24_960),
-		.mipi_regs = ar0822_mipi_timing_24_960,
+		.formats = ar0822_formats_24_960,
+		.formats_amount = ARRAY_SIZE(ar0822_formats_24_960),
+		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_960),
+		.regs_mipi = {
+			[AR0822_BIT_DEPTH_ID_10BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_960_10bit),
+			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_960_12bit),
+		},
 	},
 };
 
@@ -512,7 +516,7 @@ static const unsigned int ar0822_test_pattern_val[] = {
 	AR0822_TEST_PATTERN_WALKING_1S,
 };
 
-static const struct cci_reg_sequence ar0822_init_table[] = {
+static const struct cci_reg_sequence ar0822_regs_common[] = {
 	// { AR0822_REG_T1_PIX_DEF_ID2, 0x37C3 },
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
@@ -528,7 +532,7 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 	int exposure_max, exposure_def;
 
 	/* Honour the VBLANK limits when setting exposure. */
-	exposure_max = sensor->mode.info->height + sensor->vblank->val -
+	exposure_max = sensor->mode.format->height + sensor->vblank->val -
 		       AR0822_EXPOSURE_MIN;
 	exposure_def = min(exposure_max, sensor->exposure->val);
 	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
@@ -557,9 +561,9 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_VBLANK:
 		dev_dbg(sensor->dev,
 			"ar0822_set_ctrl: AR0822_REG_FRAME_LENGTH_LINES %d\n",
-			sensor->mode.info->height + ctrl->val);
+			sensor->mode.format->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-				sensor->mode.info->height + ctrl->val, NULL);
+				sensor->mode.format->height + ctrl->val, NULL);
 		break;
 	case V4L2_CID_EXPOSURE:
 		dev_dbg(sensor->dev,
@@ -627,28 +631,27 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
 {
-	return &sensor->mode.info->timing[sensor->hw_config.lane_mode]
-					 [sensor->mode.bit_depth];
+	return &sensor->mode.format->timing[sensor->hw_config.lane_mode]
+					   [sensor->mode.bit_depth];
 }
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
 	int hblank;
-	const struct ar0822_mode_lut *mode_info = sensor->mode.info;
+	const struct ar0822_format *format = sensor->mode.format;
 	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
 	__v4l2_ctrl_modify_range(
-		sensor->vblank,
-		timing->frame_length_lines_min - mode_info->height,
-		AR0822_VTS_MAX - mode_info->height, sensor->vblank->step,
-		timing->frame_length_lines_min - mode_info->height);
+		sensor->vblank, timing->frame_length_lines_min - format->height,
+		AR0822_VTS_MAX - format->height, sensor->vblank->step,
+		timing->frame_length_lines_min - format->height);
 
 	/* Setting this will adjust the exposure limits as well */
 	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   timing->frame_length_lines_min - mode_info->height);
+			   timing->frame_length_lines_min - format->height);
 
-	hblank = timing->line_length_pck_min - mode_info->width;
+	hblank = timing->line_length_pck_min - format->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
 	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
 }
@@ -657,12 +660,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	struct ar0822_mode_lut const *mode_info = sensor->mode.info;
 	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
-	u8 link_freq_id = sensor->hw_config.pll_config->link_freq -
-			  ar0822_link_frequencies;
-	u32 exposure_max, exposure_def, hblank;
+	u8 link_freq_id =
+		sensor->pll_config->freq_link - ar0822_link_frequencies;
+	u32 exposure_max, exposure_def;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
@@ -680,7 +682,31 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	/* Exposure control */
+	/* Pixel rate (read only) */
+	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
+				 sensor->pll_config->pixel_rate,
+				 sensor->pll_config->pixel_rate, 1,
+				 sensor->pll_config->pixel_rate);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	/*
+	 * Create the controls here, but mode specific limits are setup
+	 * in the ar0822_set_framing_limits() call below.
+	 */
+
+	/* Horizontal blanking (read only) */
+	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+					   V4L2_CID_HBLANK, 0, 0xFFFF, 1, 0);
+	if (sensor->hblank)
+		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	/* Vertical blanking control */
+	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+					   V4L2_CID_VBLANK, 0, 0xFFFF,
+					   AR0822_VBLANK_STEP, 0);
+
+	/* Exposure */
 	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MIN;
 	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
 			       exposure_max :
@@ -690,50 +716,27 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
 		exposure_def);
 
-	/* Analogue gain control */
+	/* Analogue gain */
 	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 			  V4L2_CID_ANALOGUE_GAIN, AR0822_ANA_GAIN_MIN,
 			  AR0822_ANA_GAIN_MAX, AR0822_ANA_GAIN_STEP,
 			  AR0822_ANA_GAIN_MIN);
 
-	/* Horizontal blanking control */
-	hblank = timing->line_length_pck_min - mode_info->width;
-	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-					   V4L2_CID_HBLANK, hblank, hblank, 1,
-					   hblank);
-	if (sensor->hblank)
-		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-
-	/* Vertical blanking control */
-	sensor->vblank = v4l2_ctrl_new_std(
-		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_VBLANK,
-		timing->frame_length_lines_min - mode_info->height,
-		AR0822_VTS_MAX - mode_info->height, AR0822_VBLANK_STEP,
-		timing->frame_length_lines_min - mode_info->height);
-
-	/* Pixel rate control */
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
-				 sensor->hw_config.pll_config->pixel_rate,
-				 sensor->hw_config.pll_config->pixel_rate, 1,
-				 sensor->hw_config.pll_config->pixel_rate);
-	if (ctrl)
-		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
-
-	/* Horizontal flip control */
+	/* Horizontal flip */
 	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
 
-	/* Vertical flip control */
+	/* Vertical flip */
 	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
-	/* Test pattern control */
+	/* Test patterns */
 	v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
 				     V4L2_CID_TEST_PATTERN,
 				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 				     0, 0, ar0822_test_pattern_menu);
 
-	for (unsigned int i = 0; i < 4; i++) {
+	for (u8 i = 0; i < AR0822_TEST_SOLID_COLOR_CTRL_AMOUNT; i++) {
 		/*
 		 * The assumption is that
 		 * V4L2_CID_TEST_PATTERN_GREENR == V4L2_CID_TEST_PATTERN_RED + 1
@@ -792,6 +795,98 @@ static int ar0822_mode_stream_off(struct ar0822 *sensor)
 			 AR0822_MODE_SELECT_STREAM_OFF, NULL);
 }
 
+static int ar0822_get_bit_depth(enum ar0822_bit_depth_id id, u8 *bit_depth)
+{
+	if (!bit_depth)
+		return -EINVAL;
+
+	switch (id) {
+	case AR0822_BIT_DEPTH_ID_10BIT:
+		*bit_depth = 10;
+		break;
+	case AR0822_BIT_DEPTH_ID_12BIT:
+		*bit_depth = 12;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static inline int
+ar0822_reg_seq_write(struct regmap *regmap,
+		     struct ar0822_reg_sequence const *reg_sequence)
+{
+	return cci_multi_reg_write(regmap, reg_sequence->regs,
+				   reg_sequence->amount, NULL);
+}
+
+static int ar0822_config_pll(struct ar0822 *sensor)
+{
+	int ret;
+	u8 bit_depth;
+
+	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Unsupported bit depth id %d\n",
+			sensor->mode.bit_depth);
+		return ret;
+	}
+
+	/* Configure PLL */
+	ret = ar0822_reg_seq_write(sensor->regmap,
+				   &sensor->pll_config->regs_pll);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to write PLL config: %d\n", ret);
+		return ret;
+	}
+
+	/* op_word_clk_div = output bit depth (bits) / 2 */
+	ret = cci_write(sensor->regmap, AR0822_REG_OP_WORD_CLK_DIV,
+			bit_depth / 2, NULL);
+	if (ret < 0) {
+		dev_err(sensor->dev,
+			"Failed to write AR0822_REG_OP_WORD_CLK_DIV: %d\n",
+			ret);
+		return ret;
+	}
+
+	/* Configure MIPI timing */
+	ret = ar0822_reg_seq_write(
+		sensor->regmap,
+		&sensor->pll_config->regs_mipi[sensor->mode.bit_depth]);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to write MIPI timing config: %d\n",
+			ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int ar0822_config_serial_format(struct ar0822 *sensor)
+{
+	int ret;
+	u8 bit_depth;
+
+	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
+	if (ret < 0)
+		return ret;
+
+	ret = cci_write(sensor->regmap, AR0822_REG_SERIAL_FORMAT,
+			(0x0200 | sensor->hw_config.num_data_lanes), NULL);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to set serial format: %d\n", ret);
+		return ret;
+	}
+
+	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
+			(((u16)bit_depth << 8) | bit_depth), NULL);
+
+	return ret;
+}
+
 static int ar0822_start_streaming(struct ar0822 *sensor)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
@@ -802,90 +897,50 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	if (ret < 0)
 		return ret;
 
-	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_STREAM_ON,
-			NULL);
-	if (ret < 0) {
-		dev_err(sensor->dev, "Failed to set stream on: %d\n", ret);
+	ret = ar0822_mode_stream_on(sensor);
+	if (ret < 0)
 		return ret;
-	}
 
 	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
 	usleep_range(2000, 2100);
 
-	/* Set the sensor back to low power mode */
-	ret = cci_write(sensor->regmap, AR0822_REG_RESET, AR0822_MODE_LOW_POWER,
-			NULL);
-	if (ret < 0) {
-		dev_err(sensor->dev, "Failed to set low power mode: %d\n", ret);
+	ret = ar0822_mode_stream_off(sensor);
+	if (ret < 0)
 		return ret;
-	}
 
-	/* wait 160000 EXTCLKs for software standdby */
+	/* Wait 160000 EXTCLKs for software standdby */
 	usleep_range(7000, 8000);
 
-	u8 bit_depth = (sensor->mode.bit_depth == AR0822_BIT_DEPTH_10BIT) ? 10 :
-									    12;
+	/* Configure PLL and MIPI timings */
+	ret = ar0822_config_pll(sensor);
+	if (ret < 0)
+		return ret;
 
-	/* PLL config */
-	ret = cci_write(sensor->regmap, AR0822_REG_OP_WORD_CLK_DIV,
-			bit_depth / 2, NULL);
+	/* Configure registers common for all modes */
+	ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_common,
+				  ARRAY_SIZE(ar0822_regs_common), NULL);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to write common regs: %d\n", ret);
+		return ret;
+	}
+
+	/* Configure image format */
+	ret = ar0822_reg_seq_write(sensor->regmap,
+				   &sensor->mode.format->reg_sequence);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to configure format: %d\n", ret);
+		return ret;
+	}
+
+	/* Configure serial format */
+	ret = ar0822_config_serial_format(sensor);
 	if (ret) {
-		dev_err(sensor->dev,
-			"Failed to write AR0822_REG_OP_WORD_CLK_DIV: %d\n",
+		dev_err(sensor->dev, "Failed to configure serial format: %d\n",
 			ret);
 		return ret;
 	}
 
-	ret = cci_multi_reg_write(sensor->regmap,
-				  sensor->hw_config.pll_config->regs,
-				  sensor->hw_config.pll_config->regs_amount,
-				  NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to write PLL config: %d\n", ret);
-		return ret;
-	}
-
-	ret = cci_multi_reg_write(
-		sensor->regmap,
-		sensor->hw_config.pll_config->mipi_regs[sensor->mode.bit_depth],
-		AR0822_MIPI_TIMING_REG_AMOUNT, NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to write MIPI timing config: %d\n",
-			ret);
-		return ret;
-	}
-
-	/* Common init */
-	ret = cci_multi_reg_write(sensor->regmap, ar0822_init_table,
-				  ARRAY_SIZE(ar0822_init_table), NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to write init table: %d\n", ret);
-		return ret;
-	}
-
-	/* Mode init */
-	ret = cci_multi_reg_write(sensor->regmap, sensor->mode.info->regs,
-				  sensor->mode.info->regs_amount, NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to write mode config: %d\n", ret);
-		return ret;
-	}
-
-	/* Serial format */
-	ret = cci_write(sensor->regmap, AR0822_REG_SERIAL_FORMAT,
-			(0x0200 | sensor->hw_config.num_data_lanes), NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to set serial format: %d\n", ret);
-		return ret;
-	}
-
-	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
-			(((u16)bit_depth << 8) | bit_depth), NULL);
-	if (ret) {
-		dev_err(sensor->dev, "Failed to write format: %d\n", ret);
-		return ret;
-	}
-
+	/* Set fixed line length pck for current mode */
 	ret = cci_write(sensor->regmap, AR0822_REG_LINE_LENGTH_PCK,
 			timing->line_length_pck_min, NULL);
 	if (ret) {
@@ -893,6 +948,7 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		return ret;
 	}
 
+	/* Wait for PLL lock */
 	usleep_range(1000, 1100);
 
 	/* Apply customized values from user */
@@ -963,31 +1019,32 @@ static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
 {
 	u8 i;
 
-	for (i = 0; i < AR0822_BIT_DEPTH_AMOUNT; i++)
+	for (i = 0; i < AR0822_BIT_DEPTH_ID_AMOUNT; i++)
 		if (ar0822_format_codes[i] == code)
 			break;
 
-	if (i >= AR0822_BIT_DEPTH_AMOUNT)
+	if (i >= AR0822_BIT_DEPTH_ID_AMOUNT)
 		i = 0;
 
 	return ar0822_format_codes[i];
 }
 
-static int ar0822_get_bit_depth(u32 code, enum ar0822_bit_depth *bit_depth)
+static int ar0822_get_bit_depth_id(u32 code,
+				   enum ar0822_bit_depth_id *bit_depth_id)
 {
-	enum ar0822_bit_depth i;
+	enum ar0822_bit_depth_id i;
 
-	if (!bit_depth)
+	if (!bit_depth_id)
 		return -EINVAL;
 
-	for (i = 0; i < AR0822_BIT_DEPTH_AMOUNT; i++)
+	for (i = 0; i < AR0822_BIT_DEPTH_ID_AMOUNT; i++)
 		if (ar0822_format_codes[i] == code)
 			break;
 
-	if (i >= AR0822_BIT_DEPTH_AMOUNT)
+	if (i >= AR0822_BIT_DEPTH_ID_AMOUNT)
 		return -ENOENT;
 
-	*bit_depth = i;
+	*bit_depth_id = i;
 
 	return 0;
 }
@@ -996,7 +1053,7 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index >= AR0822_BIT_DEPTH_AMOUNT)
+	if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
 		return -EINVAL;
 
 	code->code = ar0822_format_codes[code->index];
@@ -1009,8 +1066,6 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 				  struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	struct ar0822_mode_lut const *supported_modes =
-		sensor->hw_config.pll_config->supported_modes;
 
 	if (fse->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1018,15 +1073,15 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	if (fse->pad != IMAGE_PAD)
 		return -EINVAL;
 
-	if (fse->index >= sensor->hw_config.pll_config->modes_amount)
+	if (fse->index >= sensor->pll_config->formats_amount)
 		return -EINVAL;
 
 	if (fse->code != ar0822_get_format_code(sensor, fse->code))
 		return -EINVAL;
 
-	fse->min_width = supported_modes[fse->index].width;
+	fse->min_width = sensor->pll_config->formats[fse->index].width;
 	fse->max_width = fse->min_width;
-	fse->min_height = supported_modes[fse->index].height;
+	fse->min_height = sensor->pll_config->formats[fse->index].height;
 	fse->max_height = fse->min_height;
 
 	return 0;
@@ -1035,8 +1090,8 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 static void ar0822_set_default_format(struct ar0822 *sensor)
 {
 	/* Set default mode to max resolution */
-	sensor->mode.info = &sensor->hw_config.pll_config->supported_modes[0];
-	sensor->mode.bit_depth = AR0822_BIT_DEPTH_10BIT;
+	sensor->mode.format = &sensor->pll_config->formats[0];
+	sensor->mode.bit_depth = AR0822_BIT_DEPTH_ID_10BIT;
 	sensor->fmt_code = ar0822_format_codes[0];
 }
 
@@ -1050,11 +1105,11 @@ static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
 }
 
 static void ar0822_update_image_pad_format(struct ar0822 *sensor,
-					   const struct ar0822_mode_lut *mode,
+					   const struct ar0822_format *format,
 					   struct v4l2_subdev_format *fmt)
 {
-	fmt->format.width = mode->width;
-	fmt->format.height = mode->height;
+	fmt->format.width = format->width;
+	fmt->format.height = format->height;
 	fmt->format.field = V4L2_FIELD_NONE;
 	ar0822_reset_colorspace(&fmt->format);
 }
@@ -1096,7 +1151,8 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 			goto mutex_release;
 		}
 
-		ar0822_update_image_pad_format(sensor, sensor->mode.info, fmt);
+		ar0822_update_image_pad_format(sensor, sensor->mode.format,
+					       fmt);
 		fmt->format.code =
 			ar0822_get_format_code(sensor, sensor->fmt_code);
 	}
@@ -1111,9 +1167,9 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	struct ar0822_mode_lut const *mode;
+	struct ar0822_format const *format;
 	struct v4l2_mbus_framefmt *framefmt;
-	enum ar0822_bit_depth bit_depth;
+	enum ar0822_bit_depth_id bit_depth;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1122,20 +1178,21 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 
 	fmt->format.code = ar0822_get_format_code(sensor, fmt->format.code);
 
-	mode = v4l2_find_nearest_size(
-		sensor->hw_config.pll_config->supported_modes,
-		sensor->hw_config.pll_config->modes_amount, width, height,
-		fmt->format.width, fmt->format.height);
+	format = v4l2_find_nearest_size(sensor->pll_config->formats,
+				      sensor->pll_config->formats_amount, width,
+				      height, fmt->format.width,
+				      fmt->format.height);
 
-	ar0822_update_image_pad_format(sensor, mode, fmt);
+	ar0822_update_image_pad_format(sensor, format, fmt);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 		framefmt = v4l2_subdev_state_get_format(state, fmt->pad);
 		*framefmt = fmt->format;
-	} else if ((sensor->mode.info != mode) ||
+	} else if ((sensor->mode.format != format) ||
 		   (sensor->mode.bit_depth != bit_depth) ||
 		   (sensor->fmt_code != fmt->format.code)) {
-		sensor->mode.info = mode;
-		ar0822_get_bit_depth(fmt->format.code, &sensor->mode.bit_depth);
+		sensor->mode.format = format;
+		ar0822_get_bit_depth_id(fmt->format.code,
+					&sensor->mode.bit_depth);
 		sensor->fmt_code = fmt->format.code;
 		ar0822_set_framing_limits(sensor);
 	}
@@ -1153,7 +1210,7 @@ __ar0822_get_pad_crop(struct ar0822 *sensor, struct v4l2_subdev_state *sd_state,
 	case V4L2_SUBDEV_FORMAT_TRY:
 		return v4l2_subdev_state_get_crop(sd_state, pad);
 	case V4L2_SUBDEV_FORMAT_ACTIVE:
-		return &sensor->mode.info->crop;
+		return &sensor->mode.format->crop;
 	}
 
 	return NULL;
@@ -1375,12 +1432,12 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	// TODO: check
 	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
 	case 2:
-		hw_config->lane_mode = AR0822_LANE_MODE_2;
+		hw_config->lane_mode = AR0822_LANE_MODE_ID_2;
 		hw_config->num_data_lanes =
 			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	case 4:
-		hw_config->lane_mode = AR0822_LANE_MODE_4;
+		hw_config->lane_mode = AR0822_LANE_MODE_ID_4;
 		hw_config->num_data_lanes =
 			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
@@ -1405,8 +1462,8 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	extclk_frequency = clk_get_rate(hw_config->extclk);
 
 	for (i = 0; i < ARRAY_SIZE(ar0822_pll_configs); i++) {
-		if ((*ar0822_pll_configs[i].extclk_freq == extclk_frequency) &&
-		    (*ar0822_pll_configs[i].link_freq ==
+		if ((*ar0822_pll_configs[i].freq_extclk == extclk_frequency) &&
+		    (*ar0822_pll_configs[i].freq_link ==
 		     endpoint_config.link_frequencies[0]))
 			break;
 	}
@@ -1419,12 +1476,12 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		goto done_endpoint_free;
 	}
 
-	hw_config->pll_config = &ar0822_pll_configs[i];
+	sensor->pll_config = &ar0822_pll_configs[i];
 
 	ret = 0;
 	dev_dbg(sensor->dev,
 		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
-		extclk_frequency, *hw_config->pll_config->link_freq,
+		extclk_frequency, *sensor->pll_config->freq_link,
 		hw_config->num_data_lanes);
 
 done_endpoint_free:
