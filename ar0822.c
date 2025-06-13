@@ -219,6 +219,12 @@ struct ar0822_mode {
 	enum ar0822_bit_depth_id bit_depth;
 };
 
+enum pad_types {
+	IMAGE_PAD,
+	METADATA_PAD,
+	NUM_PADS,
+};
+
 struct ar0822 {
 	struct device *dev;
 	struct ar0822_hw_config hw_config;
@@ -227,7 +233,7 @@ struct ar0822 {
 	struct regmap *regmap;
 
 	struct v4l2_subdev subdev;
-	struct media_pad pad;
+	struct media_pad pad[NUM_PADS];
 
 	struct v4l2_ctrl_handler ctrl_hdlr;
 	struct v4l2_ctrl *vblank;
@@ -241,8 +247,6 @@ struct ar0822 {
 	struct ar0822_mode mode;
 	unsigned int fmt_code;
 };
-
-enum pad_types { IMAGE_PAD, NUM_PADS };
 
 enum ar0822_extclk_link_id {
 	AR0822_EXTCLK_LINK_ID_24_480 = 0,
@@ -1093,10 +1097,20 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
+	if (code->pad >= NUM_PADS)
 		return -EINVAL;
 
-	code->code = ar0822_format_codes[code->index];
+	if (code->pad == IMAGE_PAD) {
+		if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
+			return -EINVAL;
+
+		code->code = ar0822_format_codes[code->index];
+	} else {
+		if (code->index > 0)
+			return -EINVAL;
+
+		code->code = MEDIA_BUS_FMT_SENSOR_DATA;
+	}
 
 	return 0;
 }
@@ -1110,19 +1124,27 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	if (fse->pad >= NUM_PADS)
 		return -EINVAL;
 
-	if (fse->pad != IMAGE_PAD)
-		return -EINVAL;
+	if (fse->pad == IMAGE_PAD) {
+		if (fse->index >= sensor->pll_config->formats_amount)
+			return -EINVAL;
 
-	if (fse->index >= sensor->pll_config->formats_amount)
-		return -EINVAL;
+		if (fse->code != ar0822_get_format_code(sensor, fse->code))
+			return -EINVAL;
 
-	if (fse->code != ar0822_get_format_code(sensor, fse->code))
-		return -EINVAL;
+		fse->min_width = sensor->pll_config->formats[fse->index].width;
+		fse->max_width = fse->min_width;
+		fse->min_height =
+			sensor->pll_config->formats[fse->index].height;
+		fse->max_height = fse->min_height;
+	} else {
+		if (fse->code != MEDIA_BUS_FMT_SENSOR_DATA || fse->index > 0)
+			return -EINVAL;
 
-	fse->min_width = sensor->pll_config->formats[fse->index].width;
-	fse->max_width = fse->min_width;
-	fse->min_height = sensor->pll_config->formats[fse->index].height;
-	fse->max_height = fse->min_height;
+		fse->min_width = AR0822_EMBEDDED_LINE_WIDTH;
+		fse->max_width = fse->min_width;
+		fse->min_height = AR0822_NUM_EMBEDDED_LINES;
+		fse->max_height = fse->min_height;
+	}
 
 	return 0;
 }
@@ -1167,7 +1189,6 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	int ret = 0;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1178,28 +1199,24 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 		struct v4l2_mbus_framefmt *try_fmt =
 			v4l2_subdev_state_get_format(sd_state, fmt->pad);
 
-		if (fmt->pad != IMAGE_PAD) {
-			ret = -EINVAL;
-			goto mutex_release;
-		}
-
-		try_fmt->code = ar0822_get_format_code(sensor, try_fmt->code);
+		try_fmt->code =
+			fmt->pad == IMAGE_PAD ?
+				ar0822_get_format_code(sensor, try_fmt->code) :
+				MEDIA_BUS_FMT_SENSOR_DATA;
 		fmt->format = *try_fmt;
 	} else {
-		if (fmt->pad != IMAGE_PAD) {
-			ret = -EINVAL;
-			goto mutex_release;
+		if (fmt->pad == IMAGE_PAD) {
+			ar0822_update_image_pad_format(
+				sensor, sensor->mode.format, fmt);
+			fmt->format.code = ar0822_get_format_code(
+				sensor, sensor->fmt_code);
+		} else {
+			ar0822_update_metadata_pad_format(fmt);
 		}
-
-		ar0822_update_image_pad_format(sensor, sensor->mode.format,
-					       fmt);
-		fmt->format.code =
-			ar0822_get_format_code(sensor, sensor->fmt_code);
 	}
 
-mutex_release:
 	mutex_unlock(&sensor->mutex);
-	return ret;
+	return 0;
 }
 
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
@@ -1209,32 +1226,43 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 	struct ar0822 *sensor = to_ar0822(sd);
 	struct ar0822_format const *format;
 	struct v4l2_mbus_framefmt *framefmt;
-	enum ar0822_bit_depth_id bit_depth;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
 
 	mutex_lock(&sensor->mutex);
 
-	fmt->format.code = ar0822_get_format_code(sensor, fmt->format.code);
+	if (fmt->pad == IMAGE_PAD) {
+		fmt->format.code =
+			ar0822_get_format_code(sensor, fmt->format.code);
 
-	format = v4l2_find_nearest_size(sensor->pll_config->formats,
-					sensor->pll_config->formats_amount,
-					width, height, fmt->format.width,
-					fmt->format.height);
+		format = v4l2_find_nearest_size(
+			sensor->pll_config->formats,
+			sensor->pll_config->formats_amount, width, height,
+			fmt->format.width, fmt->format.height);
 
-	ar0822_update_image_pad_format(sensor, format, fmt);
-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		framefmt = v4l2_subdev_state_get_format(state, fmt->pad);
-		*framefmt = fmt->format;
-	} else if ((sensor->mode.format != format) ||
-		   (sensor->mode.bit_depth != bit_depth) ||
-		   (sensor->fmt_code != fmt->format.code)) {
-		sensor->mode.format = format;
-		ar0822_get_bit_depth_id(fmt->format.code,
-					&sensor->mode.bit_depth);
-		sensor->fmt_code = fmt->format.code;
-		ar0822_set_framing_limits(sensor);
+		ar0822_update_image_pad_format(sensor, format, fmt);
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else if ((sensor->mode.format != format) ||
+			   (sensor->fmt_code != fmt->format.code)) {
+			sensor->mode.format = format;
+			ar0822_get_bit_depth_id(fmt->format.code,
+						&sensor->mode.bit_depth);
+			sensor->fmt_code = fmt->format.code;
+			ar0822_set_framing_limits(sensor);
+		}
+	} else {
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else {
+			/* Only one embedded data mode is supported */
+			ar0822_update_metadata_pad_format(fmt);
+		}
 	}
 
 	mutex_unlock(&sensor->mutex);
@@ -1332,9 +1360,12 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 
 	sensor->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 				V4L2_SUBDEV_FL_HAS_EVENTS;
-	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	ret = media_entity_pads_init(&sensor->subdev.entity, 1, &sensor->pad);
+
+	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
+	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
+	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
+				     sensor->pad);
 	if (ret < 0) {
 		dev_err(sensor->dev, "failed to init entity pads: %d\n", ret);
 		goto error_handler_free;
