@@ -658,7 +658,7 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 				ctrl->val, NULL);
 		break;
 	default:
-		dev_err(sensor->dev, "unhandled control %d\n", ctrl->id);
+		dev_err(sensor->dev, "unhandled control %x\n", ctrl->id);
 		ret = -EINVAL;
 		break;
 	}
