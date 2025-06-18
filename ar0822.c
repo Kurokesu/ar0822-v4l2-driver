@@ -35,8 +35,8 @@
 #define AR0822_RESET_MIN_DELAY_US 7000
 #define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
 
-#define AR0822_PIXEL_NATIVE_WIDTH 3840
-#define AR0822_PIXEL_NATIVE_HEIGHT 2160
+#define AR0822_PIXEL_NATIVE_WIDTH 3848
+#define AR0822_PIXEL_NATIVE_HEIGHT 2168
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_TOP 8
@@ -52,8 +52,6 @@
 #define AR0822_ANA_GAIN_DEFAULT 0
 
 #define AR0822_MODEL_ID 0x0F56
-#define AR0822_MODE_LOW_POWER 0x0018
-#define AR0822_MODE_STREAM_ON (AR0822_MODE_LOW_POWER | BIT(2))
 
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
@@ -148,8 +146,6 @@
 #define AR0822_REG_T1_NOISE_GAIN_THRESHOLD1 CCI_REG16(0x51D8)
 #define AR0822_REG_SENSOR_GAIN CCI_REG16(0x5900)
 #define AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH CCI_REG16(0x5930)
-
-#define AR0822_FLL_4K_MIN 2184
 
 /* Helper macro for declaring ar0822 reg sequence */
 #define AR0822_REG_SEQ(_reg_array)                                      \
@@ -352,19 +348,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2140,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
@@ -383,12 +379,12 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		},
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
-				.line_length_pck_min = 982,
+				.line_length_pck_min = 984,
 				.frame_length_lines_min = 2712,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
-				.frame_length_lines_min = 2320,
+				.frame_length_lines_min = 2328,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 792,
@@ -413,19 +409,19 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1782,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2106,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
-				.line_length_pck_min = 1220,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.line_length_pck_min = 982,
+				.frame_length_lines_min = 2672,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2288,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
@@ -544,6 +540,10 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_T1_NOISE_FLOOR3, 0x0004 },
 	{ AR0822_REG_PIX_DEF_ID, 0x0001 },
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 },
+	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
+	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
+	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
+	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 	/* OnSemi magic registers */
 	{ CCI_REG16(0x50A2), 0x2553 },
 	{ CCI_REG16(0x50A4), 0xDFD4 },
@@ -566,11 +566,6 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ CCI_REG16(0x50B6), 0x0F0F },
 	{ CCI_REG16(0x50B8), 0x030F },
 	{ CCI_REG16(0x50B8), 0x050F },
-	{ AR0822_REG_READ_MODE, 0x0004 }, // 4 embedded data rows
-	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
-	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
-	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
-	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 };
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
