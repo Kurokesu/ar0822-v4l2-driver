@@ -285,14 +285,15 @@ static const struct cci_reg_sequence ar0822_pll_config_24_960[] = {
 };
 
 static const struct cci_reg_sequence ar0822_1080p_config[] = {
-	{ AR0822_REG_X_ADDR_START, 968 },
-	{ AR0822_REG_X_ADDR_END, 2887 },
-	{ AR0822_REG_Y_ADDR_START, 548 },
-	{ AR0822_REG_Y_ADDR_END, 1627 },
-	{ AR0822_REG_X_ODD_INC, 0x0001 }, // default no skip
-	{ AR0822_REG_Y_ODD_INC, 0x0001 }, // default no skip
+	{ AR0822_REG_X_ADDR_START, 8 },
+	{ AR0822_REG_X_ADDR_END, 3847 },
+	{ AR0822_REG_Y_ADDR_START, 8 },
+	{ AR0822_REG_Y_ADDR_END, 2167 },
+	{ AR0822_REG_X_ODD_INC, 0x0003 },
+	{ AR0822_REG_Y_ODD_INC, 0x0003 },
 	{ AR0822_REG_X_OUTPUT_CONTROL, 1920 },
 	{ AR0822_REG_Y_OUTPUT_CONTROL, 1080 },
+	{ AR0822_REG_READ_MODE, 0x3004 }, // binning & 4 embedded data rows
 };
 
 static const struct cci_reg_sequence ar0822_4k_config[] = {
@@ -304,6 +305,7 @@ static const struct cci_reg_sequence ar0822_4k_config[] = {
 	{ AR0822_REG_Y_ODD_INC, 0x0001 }, // default no skip
 	{ AR0822_REG_X_OUTPUT_CONTROL, 3840 },
 	{ AR0822_REG_Y_OUTPUT_CONTROL, 2160 },
+	{ AR0822_REG_READ_MODE, 0x0004 }, // 4 embedded data rows
 };
 
 static const struct ar0822_format ar0822_formats_24_480[] = {
@@ -311,10 +313,10 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.width = 1920,
 		.height = 1080,
 		.crop = {
-			.left = 0,
-			.top = 0,
-			.width = 1920,
-			.height = 1080,
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.left = AR0822_PIXEL_ARRAY_LEFT,
+			.width = 3840,
+			.height = 2160,
 		},
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
@@ -340,8 +342,8 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.width = 3840,
 		.height = 2160,
 		.crop = {
-			.left = 0,
-			.top = 0,
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.left = AR0822_PIXEL_ARRAY_LEFT,
 			.width = 3840,
 			.height = 2160,
 		},
@@ -372,10 +374,10 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		.width = 1920,
 		.height = 1080,
 		.crop = {
-			.left = 0,
-			.top = 0,
-			.width = 1920,
-			.height = 1080,
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.left = AR0822_PIXEL_ARRAY_LEFT,
+			.width = 3840,
+			.height = 2160,
 		},
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
@@ -401,8 +403,8 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		.width = 3840,
 		.height = 2160,
 		.crop = {
-			.left = 0,
-			.top = 0,
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.left = AR0822_PIXEL_ARRAY_LEFT,
 			.width = 3840,
 			.height = 2160,
 		},
@@ -1304,14 +1306,14 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	case V4L2_SEL_TGT_NATIVE_SIZE:
 		sel->r.top = 0;
 		sel->r.left = 0;
-		sel->r.width = AR0822_PIXEL_NATIVE_WIDTH; // TODO: check
+		sel->r.width = AR0822_PIXEL_NATIVE_WIDTH;
 		sel->r.height = AR0822_PIXEL_NATIVE_HEIGHT;
 
 		return 0;
 	case V4L2_SEL_TGT_CROP_DEFAULT:
 	case V4L2_SEL_TGT_CROP_BOUNDS:
-		sel->r.top = 0;
-		sel->r.left = 0;
+		sel->r.top = AR0822_PIXEL_ARRAY_TOP;
+		sel->r.left = AR0822_PIXEL_ARRAY_LEFT;
 		sel->r.width = AR0822_PIXEL_ARRAY_WIDTH;
 		sel->r.height = AR0822_PIXEL_ARRAY_HEIGHT;
 
