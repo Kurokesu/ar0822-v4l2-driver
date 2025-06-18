@@ -25,8 +25,8 @@
 #define AR0822_PIXEL_RATE 160000000
 #define AR0822_REG_ADDRESS_BITS 16
 
-#define AR0822_EMBEDDED_LINE_WIDTH 16384
-#define AR0822_NUM_EMBEDDED_LINES 0
+#define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
+#define AR0822_NUM_EMBEDDED_LINES 4
 
 #define AR0822_VBLANK_STEP 8
 
@@ -35,8 +35,8 @@
 #define AR0822_RESET_MIN_DELAY_US 7000
 #define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
 
-#define AR0822_PIXEL_NATIVE_WIDTH 3840
-#define AR0822_PIXEL_NATIVE_HEIGHT 2160
+#define AR0822_PIXEL_NATIVE_WIDTH 3848
+#define AR0822_PIXEL_NATIVE_HEIGHT 2168
 #define AR0822_PIXEL_ARRAY_WIDTH 3840
 #define AR0822_PIXEL_ARRAY_HEIGHT 2160
 #define AR0822_PIXEL_ARRAY_TOP 8
@@ -52,14 +52,14 @@
 #define AR0822_ANA_GAIN_DEFAULT 0
 
 #define AR0822_MODEL_ID 0x0F56
-#define AR0822_MODE_LOW_POWER 0x0018
-#define AR0822_MODE_STREAM_ON (AR0822_MODE_LOW_POWER | BIT(2))
 
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
 
 #define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
 #define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
+
+#define AR0822_DATA_FORMAT_RAW_DEF 12 // ADC data size in bits
 
 #define AR0822_TEST_PATTERN_DISABLED 0
 #define AR0822_TEST_PATTERN_SOLID_COLOR 1
@@ -92,6 +92,7 @@
 #define AR0822_REG_OP_SYS_CLK_DIV CCI_REG16(0x3038)
 #define AR0822_REG_READ_MODE CCI_REG16(0x3040)
 #define AR0822_REG_DARK_CONTROL CCI_REG16(0x3044)
+#define AR0822_REG_SMIA_TEST CCI_REG16(0x3064)
 #define AR0822_REG_TEST_PATTERN_MODE CCI_REG16(0x3070)
 #define AR0822_REG_TEST_DATA_RED CCI_REG16(0x3072)
 #define AR0822_REG_TEST_DATA_GREENR CCI_REG16(0x3074)
@@ -101,6 +102,7 @@
 #define AR0822_REG_X_ODD_INC CCI_REG16(0x30A2)
 #define AR0822_REG_Y_ODD_INC CCI_REG16(0x30A6)
 #define AR0822_REG_DIGITAL_TEST CCI_REG16(0x30B0)
+#define AR0822_REG_TEMPSENS1_CTRL_REG CCI_REG16(0x30B8)
 #define AR0822_REG_DIGITAL_CTRL CCI_REG16(0x30BA)
 #define AR0822_REG_SERIAL_FORMAT CCI_REG16(0x31AE)
 #define AR0822_REG_DATA_FORMAT_BITS CCI_REG16(0x31AC)
@@ -144,8 +146,6 @@
 #define AR0822_REG_T1_NOISE_GAIN_THRESHOLD1 CCI_REG16(0x51D8)
 #define AR0822_REG_SENSOR_GAIN CCI_REG16(0x5900)
 #define AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH CCI_REG16(0x5930)
-
-#define AR0822_FLL_4K_MIN 2184
 
 /* Helper macro for declaring ar0822 reg sequence */
 #define AR0822_REG_SEQ(_reg_array)                                      \
@@ -219,6 +219,12 @@ struct ar0822_mode {
 	enum ar0822_bit_depth_id bit_depth;
 };
 
+enum pad_types {
+	IMAGE_PAD,
+	METADATA_PAD,
+	NUM_PADS,
+};
+
 struct ar0822 {
 	struct device *dev;
 	struct ar0822_hw_config hw_config;
@@ -227,7 +233,7 @@ struct ar0822 {
 	struct regmap *regmap;
 
 	struct v4l2_subdev subdev;
-	struct media_pad pad;
+	struct media_pad pad[NUM_PADS];
 
 	struct v4l2_ctrl_handler ctrl_hdlr;
 	struct v4l2_ctrl *vblank;
@@ -241,8 +247,6 @@ struct ar0822 {
 	struct ar0822_mode mode;
 	unsigned int fmt_code;
 };
-
-enum pad_types { IMAGE_PAD, NUM_PADS };
 
 enum ar0822_extclk_link_id {
 	AR0822_EXTCLK_LINK_ID_24_480 = 0,
@@ -344,19 +348,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2140,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
@@ -375,12 +379,12 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		},
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
-				.line_length_pck_min = 982,
+				.line_length_pck_min = 984,
 				.frame_length_lines_min = 2712,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
-				.frame_length_lines_min = 2320,
+				.frame_length_lines_min = 2328,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 792,
@@ -405,19 +409,19 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1782,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2106,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
-				.line_length_pck_min = 1220,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.line_length_pck_min = 982,
+				.frame_length_lines_min = 2672,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1146,
-				.frame_length_lines_min = AR0822_FLL_4K_MIN,
+				.frame_length_lines_min = 2288,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
@@ -536,6 +540,10 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_T1_NOISE_FLOOR3, 0x0004 },
 	{ AR0822_REG_PIX_DEF_ID, 0x0001 },
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 },
+	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
+	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
+	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
+	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 	/* OnSemi magic registers */
 	{ CCI_REG16(0x50A2), 0x2553 },
 	{ CCI_REG16(0x50A4), 0xDFD4 },
@@ -558,8 +566,6 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ CCI_REG16(0x50B6), 0x0F0F },
 	{ CCI_REG16(0x50B8), 0x030F },
 	{ CCI_REG16(0x50B8), 0x050F },
-	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
-	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 };
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
@@ -654,7 +660,7 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 				ctrl->val, NULL);
 		break;
 	default:
-		dev_err(sensor->dev, "unhandled control %d\n", ctrl->id);
+		dev_err(sensor->dev, "unhandled control %x\n", ctrl->id);
 		ret = -EINVAL;
 		break;
 	}
@@ -922,7 +928,7 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
-			(((u16)bit_depth << 8) | bit_depth), NULL);
+			(((u16)AR0822_DATA_FORMAT_RAW_DEF << 8) | bit_depth), NULL);
 
 	return ret;
 }
@@ -1093,10 +1099,20 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
+	if (code->pad >= NUM_PADS)
 		return -EINVAL;
 
-	code->code = ar0822_format_codes[code->index];
+	if (code->pad == IMAGE_PAD) {
+		if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
+			return -EINVAL;
+
+		code->code = ar0822_format_codes[code->index];
+	} else {
+		if (code->index > 0)
+			return -EINVAL;
+
+		code->code = MEDIA_BUS_FMT_SENSOR_DATA;
+	}
 
 	return 0;
 }
@@ -1110,19 +1126,27 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	if (fse->pad >= NUM_PADS)
 		return -EINVAL;
 
-	if (fse->pad != IMAGE_PAD)
-		return -EINVAL;
+	if (fse->pad == IMAGE_PAD) {
+		if (fse->index >= sensor->pll_config->formats_amount)
+			return -EINVAL;
 
-	if (fse->index >= sensor->pll_config->formats_amount)
-		return -EINVAL;
+		if (fse->code != ar0822_get_format_code(sensor, fse->code))
+			return -EINVAL;
 
-	if (fse->code != ar0822_get_format_code(sensor, fse->code))
-		return -EINVAL;
+		fse->min_width = sensor->pll_config->formats[fse->index].width;
+		fse->max_width = fse->min_width;
+		fse->min_height =
+			sensor->pll_config->formats[fse->index].height;
+		fse->max_height = fse->min_height;
+	} else {
+		if (fse->code != MEDIA_BUS_FMT_SENSOR_DATA || fse->index > 0)
+			return -EINVAL;
 
-	fse->min_width = sensor->pll_config->formats[fse->index].width;
-	fse->max_width = fse->min_width;
-	fse->min_height = sensor->pll_config->formats[fse->index].height;
-	fse->max_height = fse->min_height;
+		fse->min_width = AR0822_EMBEDDED_LINE_WIDTH;
+		fse->max_width = fse->min_width;
+		fse->min_height = AR0822_NUM_EMBEDDED_LINES;
+		fse->max_height = fse->min_height;
+	}
 
 	return 0;
 }
@@ -1167,7 +1191,6 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	int ret = 0;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
@@ -1178,28 +1201,24 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 		struct v4l2_mbus_framefmt *try_fmt =
 			v4l2_subdev_state_get_format(sd_state, fmt->pad);
 
-		if (fmt->pad != IMAGE_PAD) {
-			ret = -EINVAL;
-			goto mutex_release;
-		}
-
-		try_fmt->code = ar0822_get_format_code(sensor, try_fmt->code);
+		try_fmt->code =
+			fmt->pad == IMAGE_PAD ?
+				ar0822_get_format_code(sensor, try_fmt->code) :
+				MEDIA_BUS_FMT_SENSOR_DATA;
 		fmt->format = *try_fmt;
 	} else {
-		if (fmt->pad != IMAGE_PAD) {
-			ret = -EINVAL;
-			goto mutex_release;
+		if (fmt->pad == IMAGE_PAD) {
+			ar0822_update_image_pad_format(
+				sensor, sensor->mode.format, fmt);
+			fmt->format.code = ar0822_get_format_code(
+				sensor, sensor->fmt_code);
+		} else {
+			ar0822_update_metadata_pad_format(fmt);
 		}
-
-		ar0822_update_image_pad_format(sensor, sensor->mode.format,
-					       fmt);
-		fmt->format.code =
-			ar0822_get_format_code(sensor, sensor->fmt_code);
 	}
 
-mutex_release:
 	mutex_unlock(&sensor->mutex);
-	return ret;
+	return 0;
 }
 
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
@@ -1209,32 +1228,43 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 	struct ar0822 *sensor = to_ar0822(sd);
 	struct ar0822_format const *format;
 	struct v4l2_mbus_framefmt *framefmt;
-	enum ar0822_bit_depth_id bit_depth;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
 
 	mutex_lock(&sensor->mutex);
 
-	fmt->format.code = ar0822_get_format_code(sensor, fmt->format.code);
+	if (fmt->pad == IMAGE_PAD) {
+		fmt->format.code =
+			ar0822_get_format_code(sensor, fmt->format.code);
 
-	format = v4l2_find_nearest_size(sensor->pll_config->formats,
-					sensor->pll_config->formats_amount,
-					width, height, fmt->format.width,
-					fmt->format.height);
+		format = v4l2_find_nearest_size(
+			sensor->pll_config->formats,
+			sensor->pll_config->formats_amount, width, height,
+			fmt->format.width, fmt->format.height);
 
-	ar0822_update_image_pad_format(sensor, format, fmt);
-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		framefmt = v4l2_subdev_state_get_format(state, fmt->pad);
-		*framefmt = fmt->format;
-	} else if ((sensor->mode.format != format) ||
-		   (sensor->mode.bit_depth != bit_depth) ||
-		   (sensor->fmt_code != fmt->format.code)) {
-		sensor->mode.format = format;
-		ar0822_get_bit_depth_id(fmt->format.code,
-					&sensor->mode.bit_depth);
-		sensor->fmt_code = fmt->format.code;
-		ar0822_set_framing_limits(sensor);
+		ar0822_update_image_pad_format(sensor, format, fmt);
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else if ((sensor->mode.format != format) ||
+			   (sensor->fmt_code != fmt->format.code)) {
+			sensor->mode.format = format;
+			ar0822_get_bit_depth_id(fmt->format.code,
+						&sensor->mode.bit_depth);
+			sensor->fmt_code = fmt->format.code;
+			ar0822_set_framing_limits(sensor);
+		}
+	} else {
+		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
+			framefmt =
+				v4l2_subdev_state_get_format(state, fmt->pad);
+			*framefmt = fmt->format;
+		} else {
+			/* Only one embedded data mode is supported */
+			ar0822_update_metadata_pad_format(fmt);
+		}
 	}
 
 	mutex_unlock(&sensor->mutex);
@@ -1332,9 +1362,12 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 
 	sensor->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 				V4L2_SUBDEV_FL_HAS_EVENTS;
-	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
-	ret = media_entity_pads_init(&sensor->subdev.entity, 1, &sensor->pad);
+
+	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
+	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
+	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
+				     sensor->pad);
 	if (ret < 0) {
 		dev_err(sensor->dev, "failed to init entity pads: %d\n", ret);
 		goto error_handler_free;
