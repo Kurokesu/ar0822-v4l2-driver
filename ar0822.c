@@ -182,8 +182,10 @@ struct ar0822_format {
 	unsigned int height;
 	struct v4l2_rect crop;
 
-	struct ar0822_timing timing[AR0822_LANE_MODE_ID_AMOUNT]
-				   [AR0822_BIT_DEPTH_ID_AMOUNT];
+	struct ar0822_timing timing_no_hdr[AR0822_LANE_MODE_ID_AMOUNT]
+					  [AR0822_BIT_DEPTH_ID_AMOUNT];
+	struct ar0822_timing timing_hdr[AR0822_LANE_MODE_ID_AMOUNT]
+				       [AR0822_BIT_DEPTH_ID_AMOUNT];
 
 	struct ar0822_reg_sequence reg_sequence;
 };
@@ -219,6 +221,7 @@ struct ar0822_hw_config {
 struct ar0822_mode {
 	struct ar0822_format const *format;
 	enum ar0822_bit_depth_id bit_depth;
+	bool hdr;
 };
 
 enum pad_types {
@@ -245,6 +248,7 @@ struct ar0822 {
 	struct v4l2_ctrl *hflip;
 	struct v4l2_ctrl *vflip;
 	struct v4l2_ctrl *exposure;
+	struct v4l2_ctrl *hdr_mode;
 
 	struct mutex mutex;
 	bool streaming;
@@ -322,7 +326,7 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.timing = {
+		.timing_no_hdr = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
 				.frame_length_lines_min = 1122,
@@ -351,7 +355,7 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.timing = {
+		.timing_no_hdr = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
 				.frame_length_lines_min = 2206,
@@ -383,7 +387,7 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.timing = {
+		.timing_no_hdr = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 984,
 				.frame_length_lines_min = 2712,
@@ -412,13 +416,31 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 			.width = 3840,
 			.height = 2160,
 		},
-		.timing = {
+		.timing_no_hdr = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1782,
 				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2106,
+				.frame_length_lines_min = 2184,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 982,
+				.frame_length_lines_min = 2672,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 1146,
+				.frame_length_lines_min = 2288,
+			},
+		},
+		.timing_hdr = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 1784,
+				.frame_length_lines_min = 2184,
+			},
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 2372,
 				.frame_length_lines_min = 2184,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
@@ -479,7 +501,15 @@ static const struct cci_reg_sequence ar0822_mipi_timing_24_960_12bit[] = {
 	{ AR0822_REG_MIPI_TIMING_4, 0x1810 },
 	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0B23 },
 	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00EB },
-	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
+	// { AR0822_REG_MIPI_F1_PDT, 0x122C },
+	{ AR0822_REG_MIPI_F1_PDT, 0x002C }, //hdr
+	{ AR0822_REG_MIPI_F1_VC, 0x0000 },
+	{ AR0822_REG_MIPI_F2_PDT, 0x002C },
+	{ AR0822_REG_MIPI_F2_VC, 0x0000 },
+	{ AR0822_REG_MIPI_F3_PDT, 0x002C },
+	{ AR0822_REG_MIPI_F3_VC, 0x0000 },
+	{ AR0822_REG_MIPI_F4_PDT, 0x002C },
+	{ AR0822_REG_MIPI_F4_VC, 0x0000 },
 };
 
 static const struct ar0822_pll_config ar0822_pll_configs[] = {
@@ -572,6 +602,14 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ CCI_REG16(0x50B8), 0x050F },
 };
 
+static const struct cci_reg_sequence ar0822_regs_hdr[] = {
+	{ AR0822_REG_OPERATION_MODE_CTRL, 0x000C },
+	{ AR0822_REG_DIGITAL_CTRL, 0x0003 },
+	{ AR0822_REG_COMPANDING, 0x0000 },
+	{ AR0822_REG_EXPOSURE_RATIO, 0x0022 },
+
+};
+
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 {
 	return container_of(sd, struct ar0822, subdev);
@@ -589,6 +627,37 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 				 exposure_max);
 }
 
+static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
+{
+	if (sensor->hdr_mode->val) {
+		return &sensor->mode.format->timing_hdr[sensor->hw_config.lane_mode]
+					   [sensor->mode.bit_depth];
+	}
+
+	return &sensor->mode.format->timing_no_hdr[sensor->hw_config.lane_mode]
+					   [sensor->mode.bit_depth];
+}
+
+static void ar0822_set_framing_limits(struct ar0822 *sensor)
+{
+	int hblank, vblank_min;
+	const struct ar0822_format *format = sensor->mode.format;
+	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
+
+	/* Update limits and set FPS to default */
+	vblank_min = timing->frame_length_lines_min - format->height;
+	__v4l2_ctrl_modify_range(sensor->vblank, vblank_min,
+				 AR0822_FLL_MAX - format->height,
+				 sensor->vblank->step, vblank_min);
+
+	/* Setting this will adjust the exposure limits as well */
+	__v4l2_ctrl_s_ctrl(sensor->vblank, vblank_min);
+
+	hblank = timing->line_length_pck_min - format->width;
+	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
+	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
+}
+
 static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0822 *sensor =
@@ -596,8 +665,26 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	int ret = 0;
 
-	if (ctrl->id == V4L2_CID_VBLANK)
+	if (ctrl->id == V4L2_CID_VBLANK) {
 		ar0822_adjust_exposure_range(sensor);
+	} else if (ctrl->id == V4L2_CID_WIDE_DYNAMIC_RANGE) {
+		/*
+		 * The WIDE_DYNAMIC_RANGE control can also be applied immediately
+		 * as it doesn't set any registers. Don't do anything if the mode
+		 * already matches.
+		 */
+		if (sensor->mode.hdr != ctrl->val) {
+			dev_dbg(sensor->dev, "hdr %d\n", ctrl->val);
+			// code = imx708_get_format_code(imx708);
+			// get_mode_table(code, &mode_list, &num_modes, ctrl->val);
+			// imx708->mode = v4l2_find_nearest_size(mode_list,
+			// 				      num_modes,
+			// 				      width, height,
+			// 				      imx708->mode->width,
+			// 				      imx708->mode->height);
+			ar0822_set_framing_limits(sensor);
+		}
+	}
 
 	/*
 	 * Applying V4L2 control value only happens
@@ -678,31 +765,17 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 	.s_ctrl = ar0822_set_ctrl,
 };
 
-static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
-{
-	return &sensor->mode.format->timing[sensor->hw_config.lane_mode]
-					   [sensor->mode.bit_depth];
-}
-
-static void ar0822_set_framing_limits(struct ar0822 *sensor)
-{
-	int hblank, vblank_min;
-	const struct ar0822_format *format = sensor->mode.format;
-	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
-
-	/* Update limits and set FPS to default */
-	vblank_min = timing->frame_length_lines_min - format->height;
-	__v4l2_ctrl_modify_range(sensor->vblank, vblank_min,
-				 AR0822_FLL_MAX - format->height,
-				 sensor->vblank->step, vblank_min);
-
-	/* Setting this will adjust the exposure limits as well */
-	__v4l2_ctrl_s_ctrl(sensor->vblank, vblank_min);
-
-	hblank = timing->line_length_pck_min - format->width;
-	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
-	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
-}
+// static const struct v4l2_ctrl_config ar0822_notify_gains_ctrl = {
+// 	.ops = &ar0822_ctrl_ops,
+// 	.id = V4L2_CID_NOTIFY_GAINS,
+// 	.type = V4L2_CTRL_TYPE_U32,
+// 	.min = AR0822_COLOR_BALANCE_MIN,
+// 	.max = AR0822_COLOR_BALANCE_MAX,
+// 	.step = AR0822_COLOR_BALANCE_STEP,
+// 	.def = AR0822_COLOR_BALANCE_DEFAULT,
+// 	.dims = { 4 },
+// 	.elem_size = sizeof(u32),
+// };
 
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
@@ -796,6 +869,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 				  AR0822_TEST_PATTERN_COLOR_MAX);
 		/* The "Solid color" pattern is white by default */
 	}
+
+	// v4l2_ctrl_new_custom(ctrl_hdlr, &ar0822_notify_gains_ctrl, NULL);
+
+	sensor->hdr_mode = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+					     V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1,
+					     1, 0);
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
@@ -972,6 +1051,19 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		return ret;
 	}
 
+	if (sensor->hdr_mode->val) {
+		dev_info(sensor->dev, "Initializing hdr mode\n");
+
+		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_hdr,
+					  ARRAY_SIZE(ar0822_regs_hdr), NULL);
+
+		if (ret) {
+			dev_err(sensor->dev, "Failed to config hdr mode: %d\n",
+				ret);
+			return ret;
+		}
+	}
+
 	/* Set fixed line length pck for current mode */
 	ret = cci_write(sensor->regmap, AR0822_REG_LINE_LENGTH_PCK,
 			timing->line_length_pck_min, NULL);
@@ -1033,6 +1125,7 @@ static int ar0822_set_stream(struct v4l2_subdev *sd, int enable)
 	/* vflip and hflip cannot change during streaming */
 	__v4l2_ctrl_grab(sensor->vflip, enable);
 	__v4l2_ctrl_grab(sensor->hflip, enable);
+	__v4l2_ctrl_grab(sensor->hdr_mode, enable);
 
 	mutex_unlock(&sensor->mutex);
 
@@ -1139,6 +1232,7 @@ static void ar0822_set_default_format(struct ar0822 *sensor)
 	/* Set default mode to max resolution */
 	sensor->mode.format = &sensor->pll_config->formats[0];
 	sensor->mode.bit_depth = AR0822_BIT_DEPTH_ID_10BIT;
+	sensor->mode.hdr = false;
 	sensor->fmt_code = ar0822_format_codes[0];
 }
 
