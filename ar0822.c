@@ -693,6 +693,7 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 			// 				      width, height,
 			// 				      imx708->mode->width,
 			// 				      imx708->mode->height);
+			sensor->mode.hdr = ctrl->val;
 			ar0822_set_framing_limits(sensor);
 		}
 	}
@@ -759,6 +760,9 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_TEST_PATTERN_GREENB:
 		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_GREENB,
 				ctrl->val, NULL);
+		break;
+	case V4L2_CID_WIDE_DYNAMIC_RANGE:
+		/* Already handled above. */
 		break;
 	default:
 		dev_err(sensor->dev, "unhandled control %x\n", ctrl->id);
