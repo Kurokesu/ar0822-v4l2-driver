@@ -405,6 +405,24 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 				.frame_length_lines_min = 3360,
 			},
 		},
+		.timing_hdr = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 2376,
+				.frame_length_lines_min = 2184,
+			},
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 2376,
+				.frame_length_lines_min = 2296,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 792, //todo
+				.frame_length_lines_min = 3360, //todo
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 792, //todo
+				.frame_length_lines_min = 3360, //todo
+			},
+		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
 	},
 	{
@@ -436,12 +454,12 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 		},
 		.timing_hdr = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
-				.line_length_pck_min = 1784,
-				.frame_length_lines_min = 2184,
+				.line_length_pck_min = 2376,
+				.frame_length_lines_min = 2296,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
-				.line_length_pck_min = 2372,
-				.frame_length_lines_min = 2184,
+				.line_length_pck_min = 2376,
+				.frame_length_lines_min = 2296,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 982,
@@ -630,12 +648,13 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
 {
 	if (sensor->hdr_mode->val) {
-		return &sensor->mode.format->timing_hdr[sensor->hw_config.lane_mode]
-					   [sensor->mode.bit_depth];
+		return &sensor->mode.format
+				->timing_hdr[sensor->hw_config.lane_mode]
+					    [sensor->mode.bit_depth];
 	}
 
 	return &sensor->mode.format->timing_no_hdr[sensor->hw_config.lane_mode]
-					   [sensor->mode.bit_depth];
+						  [sensor->mode.bit_depth];
 }
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
