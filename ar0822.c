@@ -43,6 +43,7 @@
 #define AR0822_PIXEL_ARRAY_LEFT 8
 
 #define AR0822_EXPOSURE_MIN 4
+#define AR0822_EXPOSURE_MAX 0xFFFF - 48 // todo
 #define AR0822_EXPOSURE_STEP 1
 #define AR0822_EXPOSURE_DEFAULT 0x0640
 
@@ -800,14 +801,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	u8 link_freq_id =
 		sensor->pll_config->freq_link - ar0822_link_frequencies;
-	u32 exposure_max, exposure_def;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
+	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 16);
 	if (ret)
 		return ret;
 
@@ -847,14 +846,10 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 					   AR0822_VBLANK_STEP, 0);
 
 	/* Exposure */
-	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MIN;
-	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
-			       exposure_max :
-			       AR0822_EXPOSURE_DEFAULT;
 	sensor->exposure = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_EXPOSURE,
-		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
-		exposure_def);
+		AR0822_EXPOSURE_MIN, AR0822_EXPOSURE_MAX, AR0822_EXPOSURE_STEP,
+		AR0822_EXPOSURE_DEFAULT);
 
 	/* Analogue gain */
 	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
@@ -894,9 +889,9 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	// v4l2_ctrl_new_custom(ctrl_hdlr, &ar0822_notify_gains_ctrl, NULL);
 
-	sensor->hdr_mode = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-					     V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1,
-					     1, 0);
+	sensor->hdr_mode =
+		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+				  V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1, 1, 0);
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
