@@ -803,7 +803,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	u32 exposure_max;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
+	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 16);
 	if (ret)
 		return ret;
 
@@ -887,9 +887,9 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 
 	// v4l2_ctrl_new_custom(ctrl_hdlr, &ar0822_notify_gains_ctrl, NULL);
 
-	sensor->hdr_mode = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-					     V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1,
-					     1, 0);
+	sensor->hdr_mode =
+		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+				  V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1, 1, 0);
 
 	if (sensor->ctrl_hdlr.error) {
 		ret = sensor->ctrl_hdlr.error;
