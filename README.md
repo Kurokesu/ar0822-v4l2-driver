@@ -99,6 +99,7 @@ sudo apt install -y libglib2.0-dev libgstreamer-plugins-base1.0-dev
 Download a local copy of Kurokesu's fork of `libcamera` with `ar0822` modifications from GitHub:
 
 ```bash
+cd ~
 git clone --single-branch --branch ar0822 https://github.com/Kurokesu/libcamera.git
 cd libcamera/
 ```
@@ -121,9 +122,15 @@ sudo ninja -C build install
 > [!WARNING]
 > `libcamera` does not yet have a stable binary interface. Always build `rpicam-apps` after you build `libcamera`.
 
+#### Install rpicam-apps Dependencies
+```bash
+sudo apt install libavcodec-dev libavdevice-dev -y
+```
+
 #### Clone the rpicam-apps Repository
 Download a local copy of Raspberry Pi’s `rpicam-apps` GitHub repository:
 ```bash
+cd ~
 git clone https://github.com/raspberrypi/rpicam-apps.git
 cd rpicam-apps
 ```
