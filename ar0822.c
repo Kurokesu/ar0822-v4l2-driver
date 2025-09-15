@@ -930,7 +930,8 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
-			(((u16)AR0822_DATA_FORMAT_RAW_DEF << 8) | bit_depth), NULL);
+			(((u16)AR0822_DATA_FORMAT_RAW_DEF << 8) | bit_depth),
+			NULL);
 
 	return ret;
 }
@@ -1504,17 +1505,12 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		return ret;
 	}
 
-	// TODO: check
 	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
 	case 2:
 		hw_config->lane_mode = AR0822_LANE_MODE_ID_2;
-		hw_config->num_data_lanes =
-			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	case 4:
 		hw_config->lane_mode = AR0822_LANE_MODE_ID_4;
-		hw_config->num_data_lanes =
-			endpoint_config.bus.mipi_csi2.num_data_lanes;
 		break;
 	default:
 		ret = dev_err_probe(
@@ -1523,6 +1519,9 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 			endpoint_config.bus.mipi_csi2.num_data_lanes);
 		goto done_endpoint_free;
 	}
+
+	hw_config->num_data_lanes =
+		endpoint_config.bus.mipi_csi2.num_data_lanes;
 
 	if (!endpoint_config.nr_of_link_frequencies) {
 		ret = dev_err_probe(sensor->dev, -EINVAL,
