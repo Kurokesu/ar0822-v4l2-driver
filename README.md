@@ -1,5 +1,7 @@
 # Kernel Driver for AR0822
 
+The AR0822 is a high-resolution CMOS image sensor that supports up to 4K video capture. This driver enables the sensor to work with the Raspberry Pi's MIPI CSI interface, supporting both 2-lane and 4-lane configurations.
+
 This guide provides detailed instructions on how to install the AR0822 kernel driver on a Linux system, specifically Raspbian.
 
 ## Prerequisites
@@ -54,13 +56,37 @@ Remember to reboot your system for the changes to take effect.
 
 ## dtoverlay options
 
+The driver supports several configuration options that can be combined as needed:
+
+| Option | Description | Default |
+|--------|-------------|----------|
+| `cam0` | Use cam0 port instead of cam1 | cam1 |
+| `4lane` | Enable 4-lane MIPI CSI support | 2-lane |
+
 ### cam0
 
-If the camera is attached to cam0 port, append the dtoverlay with `,cam0` like this:  
+By default, the driver uses cam1 port. If the camera is attached to cam0 port instead, append the dtoverlay with `,cam0` to override the default:
 ```
 camera_auto_detect=0
 dtoverlay=ar0822,cam0
 ```
+
+### 4-lane support
+
+To enable 4-lane MIPI CSI support, append the dtoverlay with `,4lane` like this:
+```
+camera_auto_detect=0
+dtoverlay=ar0822,4lane
+```
+
+You can also combine options, for example to use cam0 with 4-lane support:
+```
+camera_auto_detect=0
+dtoverlay=ar0822,cam0,4lane
+```
+
+> [!WARNING]
+> Before using the 4-lane option, double-check that your selected camera port (cam0 or cam1) actually has 4 lanes wired on your Raspberry Pi and carrier board combination. Not all carrier boards support 4-lane MIPI CSI on both ports.
 
 ## libcamera Support
 
