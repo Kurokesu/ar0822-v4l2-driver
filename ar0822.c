@@ -60,7 +60,8 @@
 #define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
 #define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
 
-#define AR0822_DATA_FORMAT_RAW_DEF 12 // ADC data size in bits
+#define AR0822_DATA_FORMAT_RAW_DEF 12 // ADC raw data size in bits
+#define AR0822_DATA_FORMAT_RAW_HDR 20 // ADC raw data size in bits
 
 #define AR0822_TEST_PATTERN_DISABLED 0
 #define AR0822_TEST_PATTERN_SOLID_COLOR 1
@@ -1140,6 +1141,8 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 {
 	int ret;
 	u8 bit_depth;
+	u16 data_format = sensor->mode.hdr ? AR0822_DATA_FORMAT_RAW_HDR :
+					     AR0822_DATA_FORMAT_RAW_DEF;
 
 	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
 	if (ret < 0)
@@ -1153,8 +1156,7 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 	}
 
 	ret = cci_write(sensor->regmap, AR0822_REG_DATA_FORMAT_BITS,
-			(((u16)AR0822_DATA_FORMAT_RAW_DEF << 8) | bit_depth),
-			NULL);
+			((data_format << 8) | bit_depth), NULL);
 
 	return ret;
 }
@@ -1170,7 +1172,8 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 					  NULL);
 	} else {
 		dev_dbg(sensor->dev, "Initializing common mfr registers\n");
-		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_mfr_common,
+		ret = cci_multi_reg_write(sensor->regmap,
+					  ar0822_regs_mfr_common,
 					  ARRAY_SIZE(ar0822_regs_mfr_common),
 					  NULL);
 	}
