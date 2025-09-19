@@ -621,7 +621,9 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
-	/* OnSemi magic registers */
+};
+
+static const struct cci_reg_sequence ar0822_regs_mfr_common[] = {
 	{ CCI_REG16(0x50A2), 0x2553 },
 	{ CCI_REG16(0x50A4), 0xDFD4 },
 	{ CCI_REG16(0x50A6), 0x030F },
@@ -643,6 +645,75 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ CCI_REG16(0x50B6), 0x0F0F },
 	{ CCI_REG16(0x50B8), 0x030F },
 	{ CCI_REG16(0x50B8), 0x050F },
+};
+
+static const struct cci_reg_sequence ar0822_regs_mfr_hdr[] = {
+	{ CCI_REG16(0x50A2), 0x3F2A }, // override common
+	{ CCI_REG16(0x50A4), 0x875A }, // override common
+	{ CCI_REG16(0x50A6), 0x030F },
+	{ CCI_REG16(0x50A6), 0x0F0F },
+	{ CCI_REG16(0x50A8), 0x030F },
+	{ CCI_REG16(0x50A8), 0x0F0F },
+	{ CCI_REG16(0x50AA), 0x030F },
+	{ CCI_REG16(0x50AA), 0x050F },
+	{ CCI_REG16(0x50AC), 0x0301 },
+	{ CCI_REG16(0x50AC), 0x0101 },
+	{ CCI_REG16(0x50AE), 0x0301 },
+	{ CCI_REG16(0x50AE), 0x0101 },
+	{ CCI_REG16(0x50B0), 0x0301 },
+	{ CCI_REG16(0x50B0), 0x0101 },
+	{ CCI_REG16(0x50B2), 0x03FF },
+	{ CCI_REG16(0x50B4), 0x030F },
+	{ CCI_REG16(0x50B4), 0x0F0F },
+	{ CCI_REG16(0x50B6), 0x030F },
+	{ CCI_REG16(0x50B6), 0x0F0F },
+	{ CCI_REG16(0x50B8), 0x030F },
+	{ CCI_REG16(0x50B8), 0x050F },
+	{ CCI_REG16(0x3D2A), 0x0FFF },
+	{ CCI_REG16(0x3D34), 0x9C40 },
+	{ CCI_REG16(0x3D36), 0xFFFF },
+	{ CCI_REG16(0x3D02), 0x5033 },
+	{ CCI_REG16(0x3086), 0x1A28 },
+	{ CCI_REG16(0x33E4), 0x0040 },
+	{ CCI_REG16(0x3C70), 0x6222 },
+	{ CCI_REG16(0x3280), 0x0ED8 },
+	{ CCI_REG16(0x3282), 0x0ED8 },
+	{ CCI_REG16(0x3284), 0x0ED8 },
+	{ CCI_REG16(0x3286), 0x0ED8 },
+	{ CCI_REG16(0x3288), 0x0ED8 },
+	{ CCI_REG16(0x328A), 0x0ED8 },
+	{ CCI_REG16(0x328C), 0x0ED8 },
+	{ CCI_REG16(0x328E), 0x0ED8 },
+	{ CCI_REG16(0x3290), 0x0ED8 },
+	{ CCI_REG16(0x3292), 0x0ED8 },
+	{ CCI_REG16(0x3294), 0x0ED8 },
+	{ CCI_REG16(0x3296), 0x0ED8 },
+	{ CCI_REG16(0x3100), 0xC001 },
+	{ CCI_REG16(0x3102), 0xBED8 },
+	{ CCI_REG16(0x3104), 0xBED8 },
+	{ CCI_REG16(0x3106), 0xBED8 },
+	{ CCI_REG16(0x3108), 0x07D0 },
+	{ CCI_REG16(0x3124), 0x006D },
+	{ CCI_REG16(0x3126), 0x003C },
+	{ CCI_REG16(0x3D00), 0x300F },
+	{ CCI_REG16(0x3D28), 0x0ACD },
+	{ CCI_REG16(0x3D2A), 0x0ED8 },
+	{ CCI_REG16(0x3D34), 0xACD0 },
+	{ CCI_REG16(0x3D36), 0xED80 },
+	{ CCI_REG16(0x3D40), 0xFFFE },
+	{ CCI_REG16(0x3D42), 0xFFFF },
+	{ CCI_REG16(0x3D64), 0x0ED8 },
+	{ CCI_REG16(0x3D66), 0x0ED8 },
+	{ CCI_REG16(0x3D68), 0x0ED8 },
+	{ CCI_REG16(0x3D6A), 0x0ED8 },
+	{ CCI_REG16(0x3D6C), 0x0ED8 },
+	{ CCI_REG16(0x3D6E), 0x0ED8 },
+	{ CCI_REG16(0x3D70), 0x0ED8 },
+	{ CCI_REG16(0x3D72), 0x0ED8 },
+	{ CCI_REG16(0x3D74), 0x0ED8 },
+	{ CCI_REG16(0x3D76), 0x0ED8 },
+	{ CCI_REG16(0x3D78), 0x0ED8 },
+	{ CCI_REG16(0x3D7A), 0x0ED8 },
 };
 
 static const struct cci_reg_sequence ar0822_regs_hdr[] = {
@@ -677,57 +748,10 @@ static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 }, // override common
 	{ AR0822_REG_T2_PIX_DEF_ID, 0x0180 },
 	{ AR0822_REG_T4_PIX_DEF_ID, 0x0180 },
-	{ CCI_REG16(0x50A2), 0x3F2A }, // override common
-	{ CCI_REG16(0x50A4), 0x875A }, // override common
-	{ CCI_REG16(0x3D2A), 0x0FFF },
-	{ CCI_REG16(0x3D34), 0x9C40 },
-	{ CCI_REG16(0x3D36), 0xFFFF },
-	{ CCI_REG16(0x3D02), 0x5033 },
-	{ CCI_REG16(0x3086), 0x1A28 },
-	{ CCI_REG16(0x33E4), 0x0040 },
-	{ CCI_REG16(0x3C70), 0x6222 },
 	{ AR0822_REG_HDR_CONTROL0, 0x0011 },
 	{ AR0822_REG_DIGITAL_TEST, 0x0820 },
-	{ CCI_REG16(0x3280), 0x0ED8 },
-	{ CCI_REG16(0x3282), 0x0ED8 },
-	{ CCI_REG16(0x3284), 0x0ED8 },
-	{ CCI_REG16(0x3286), 0x0ED8 },
-	{ CCI_REG16(0x3288), 0x0ED8 },
-	{ CCI_REG16(0x328A), 0x0ED8 },
-	{ CCI_REG16(0x328C), 0x0ED8 },
-	{ CCI_REG16(0x328E), 0x0ED8 },
-	{ CCI_REG16(0x3290), 0x0ED8 },
-	{ CCI_REG16(0x3292), 0x0ED8 },
-	{ CCI_REG16(0x3294), 0x0ED8 },
-	{ CCI_REG16(0x3296), 0x0ED8 },
-	{ CCI_REG16(0x3100), 0xC001 },
-	{ CCI_REG16(0x3102), 0xBED8 },
-	{ CCI_REG16(0x3104), 0xBED8 },
-	{ CCI_REG16(0x3106), 0xBED8 },
-	{ CCI_REG16(0x3108), 0x07D0 },
 	{ AR0822_REG_HDR_CONTROL3, 0x2001 }, // default
-	{ CCI_REG16(0x3124), 0x006D },
-	{ CCI_REG16(0x3126), 0x003C },
-	{ CCI_REG16(0x3D00), 0x300F },
-	{ CCI_REG16(0x3D28), 0x0ACD },
-	{ CCI_REG16(0x3D2A), 0x0ED8 },
-	{ CCI_REG16(0x3D34), 0xACD0 },
-	{ CCI_REG16(0x3D36), 0xED80 },
-	{ CCI_REG16(0x3D40), 0xFFFE },
-	{ CCI_REG16(0x3D42), 0xFFFF },
 	{ AR0822_REG_T3_STR_END_DEC_TH_MSB, 0x0F0F },
-	{ CCI_REG16(0x3D64), 0x0ED8 },
-	{ CCI_REG16(0x3D66), 0x0ED8 },
-	{ CCI_REG16(0x3D68), 0x0ED8 },
-	{ CCI_REG16(0x3D6A), 0x0ED8 },
-	{ CCI_REG16(0x3D6C), 0x0ED8 },
-	{ CCI_REG16(0x3D6E), 0x0ED8 },
-	{ CCI_REG16(0x3D70), 0x0ED8 },
-	{ CCI_REG16(0x3D72), 0x0ED8 },
-	{ CCI_REG16(0x3D74), 0x0ED8 },
-	{ CCI_REG16(0x3D76), 0x0ED8 },
-	{ CCI_REG16(0x3D78), 0x0ED8 },
-	{ CCI_REG16(0x3D7A), 0x0ED8 },
 	{ AR0822_REG_COMPANDING, 0x0001 },
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0008 }, // override common
 	{ AR0822_REG_DIGITAL_CTRL, 0x013E }, // override common
@@ -800,13 +824,7 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 		 */
 		if (sensor->mode.hdr != ctrl->val) {
 			dev_dbg(sensor->dev, "hdr %d\n", ctrl->val);
-			// code = imx708_get_format_code(imx708);
-			// get_mode_table(code, &mode_list, &num_modes, ctrl->val);
-			// imx708->mode = v4l2_find_nearest_size(mode_list,
-			// 				      num_modes,
-			// 				      width, height,
-			// 				      imx708->mode->width,
-			// 				      imx708->mode->height);
+
 			sensor->mode.hdr = ctrl->val;
 			ar0822_set_framing_limits(sensor);
 		}
@@ -1141,6 +1159,25 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 	return ret;
 }
 
+static int ar0822_config_mfr(struct ar0822 *sensor)
+{
+	int ret = 0;
+
+	if (sensor->hdr_mode->val) {
+		dev_dbg(sensor->dev, "Initializing hdr mfr registers\n");
+		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_mfr_hdr,
+					  ARRAY_SIZE(ar0822_regs_mfr_hdr),
+					  NULL);
+	} else {
+		dev_dbg(sensor->dev, "Initializing common mfr registers\n");
+		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_mfr_common,
+					  ARRAY_SIZE(ar0822_regs_mfr_common),
+					  NULL);
+	}
+
+	return ret;
+}
+
 static int ar0822_start_streaming(struct ar0822 *sensor)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
@@ -1161,6 +1198,13 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 				  ARRAY_SIZE(ar0822_regs_common), NULL);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Failed to write common regs: %d\n", ret);
+		return ret;
+	}
+
+	/* Configure manufacturer recommended registers */
+	ret = ar0822_config_mfr(sensor);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to write mfr regs: %d\n", ret);
 		return ret;
 	}
 
