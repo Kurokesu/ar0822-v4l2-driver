@@ -942,20 +942,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	if (ret < 0)
 		return ret;
 
-	ret = ar0822_mode_stream_on(sensor);
-	if (ret < 0)
-		return ret;
-
-	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
-	usleep_range(2000, 2100);
-
-	ret = ar0822_mode_stream_off(sensor);
-	if (ret < 0)
-		return ret;
-
-	/* Wait 160000 EXTCLKs for software standdby */
-	usleep_range(7000, 8000);
-
 	/* Configure PLL and MIPI timings */
 	ret = ar0822_config_pll(sensor);
 	if (ret < 0)
