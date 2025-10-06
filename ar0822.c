@@ -1554,7 +1554,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	ret = 0;
 	dev_dbg(sensor->dev,
-		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
+		"clock: %luHz, link_frequency: %lluHz, lanes: %d\n",
 		extclk_frequency, *sensor->pll_config->freq_link,
 		hw_config->num_data_lanes);
 
