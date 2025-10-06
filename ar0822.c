@@ -979,9 +979,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		return ret;
 	}
 
-	/* Wait for PLL lock */
-	usleep_range(1000, 1100);
-
 	/* Apply customized values from user */
 	ret = __v4l2_ctrl_handler_setup(sensor->subdev.ctrl_handler);
 	if (ret) {
