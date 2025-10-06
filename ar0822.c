@@ -32,8 +32,8 @@
 
 #define AR0822_VTS_MAX 0xFFFF
 
-#define AR0822_RESET_MIN_DELAY_US 7000
-#define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
+#define AR0822_RESET_DELAY_US_MIN 7000
+#define AR0822_RESET_DELAY_US_MAX (AR0822_RESET_DELAY_US_MIN + 1000)
 
 #define AR0822_PIXEL_NATIVE_WIDTH 3848
 #define AR0822_PIXEL_NATIVE_HEIGHT 2168
@@ -1393,8 +1393,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 
 	gpiod_set_value_cansleep(hw_config->gpio_reset, 1);
 
-	usleep_range(AR0822_RESET_MIN_DELAY_US,
-		     AR0822_RESET_MAX_DELAY_US); // TODO this can be reduced
+	usleep_range(AR0822_RESET_DELAY_US_MIN, AR0822_RESET_DELAY_US_MAX);
 
 	return 0;
 
