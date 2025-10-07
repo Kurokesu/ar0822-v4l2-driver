@@ -28,6 +28,7 @@
 #define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
 #define AR0822_NUM_EMBEDDED_LINES 4
 
+#define AR0822_VBLANK_STEP 1
 #define AR0822_FLL_MAX 0xFFFF // Maximum frame length lines register value
 
 #define AR0822_RESET_DELAY_US_MIN 7000
