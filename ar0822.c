@@ -28,9 +28,7 @@
 #define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
 #define AR0822_NUM_EMBEDDED_LINES 4
 
-#define AR0822_VBLANK_STEP 8
-
-#define AR0822_VTS_MAX 0xFFFF
+#define AR0822_FLL_MAX 0xFFFF // Maximum frame length lines register value
 
 #define AR0822_RESET_DELAY_US_MIN 7000
 #define AR0822_RESET_DELAY_US_MAX (AR0822_RESET_DELAY_US_MIN + 1000)
@@ -681,19 +679,18 @@ static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
-	int hblank;
+	int hblank, vblank_min;
 	const struct ar0822_format *format = sensor->mode.format;
 	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
-	__v4l2_ctrl_modify_range(
-		sensor->vblank, timing->frame_length_lines_min - format->height,
-		AR0822_VTS_MAX - format->height, sensor->vblank->step,
-		timing->frame_length_lines_min - format->height);
+	vblank_min = timing->frame_length_lines_min - format->height;
+	__v4l2_ctrl_modify_range(sensor->vblank, vblank_min,
+				 AR0822_FLL_MAX - format->height,
+				 sensor->vblank->step, vblank_min);
 
 	/* Setting this will adjust the exposure limits as well */
-	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   timing->frame_length_lines_min - format->height);
+	__v4l2_ctrl_s_ctrl(sensor->vblank, vblank_min);
 
 	hblank = timing->line_length_pck_min - format->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
