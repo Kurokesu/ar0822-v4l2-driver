@@ -75,8 +75,8 @@
 				vdig-supply = <&cam_dummy_reg>;	/* 1.8v */
 				vddl-supply = <&cam_dummy_reg>;	/* 1.2v */
 
-				rotation = <180>;
-				orientation = <2>;
+				rotation = <0>;
+				orientation = <0>;
 
 				port {
 					cam_endpoint: endpoint {
