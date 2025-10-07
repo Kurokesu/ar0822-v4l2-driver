@@ -43,6 +43,7 @@
 
 #define AR0822_EXPOSURE_MIN 4
 #define AR0822_EXPOSURE_STEP 1
+#define AR0822_EXPOSURE_MARGIN 4
 #define AR0822_EXPOSURE_DEFAULT 0x0640
 
 #define AR0822_ANA_GAIN_MIN 0
@@ -572,15 +573,14 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 {
-	int exposure_max, exposure_def;
+	int exposure_max;
 
 	/* Honour the VBLANK limits when setting exposure. */
 	exposure_max = sensor->mode.format->height + sensor->vblank->val -
-		       AR0822_EXPOSURE_MIN;
-	exposure_def = min(exposure_max, sensor->exposure->val);
+		       AR0822_EXPOSURE_MARGIN;
 	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
 				 exposure_max, sensor->exposure->step,
-				 exposure_def);
+				 exposure_max);
 }
 
 static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
@@ -706,7 +706,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	u8 link_freq_id =
 		sensor->pll_config->freq_link - ar0822_link_frequencies;
-	u32 exposure_max, exposure_def;
+	u32 exposure_max;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
@@ -749,14 +749,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 					   AR0822_VBLANK_STEP, 0);
 
 	/* Exposure */
-	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MIN;
-	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
-			       exposure_max :
-			       AR0822_EXPOSURE_DEFAULT;
+	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MARGIN;
 	sensor->exposure = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_EXPOSURE,
 		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
-		exposure_def);
+		exposure_max);
 
 	/* Analogue gain */
 	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
