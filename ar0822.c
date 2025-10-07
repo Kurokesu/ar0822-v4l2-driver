@@ -52,6 +52,7 @@
 #define AR0822_ANA_GAIN_DEFAULT 0
 
 #define AR0822_MODEL_ID 0x0F56
+#define AR0822_REVISION_ID_MIN 0x2303
 
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
@@ -80,6 +81,7 @@
 #define AR0822_REG_X_ADDR_END CCI_REG16(0x3008)
 #define AR0822_REG_FRAME_LENGTH_LINES CCI_REG16(0x300A)
 #define AR0822_REG_LINE_LENGTH_PCK CCI_REG16(0x300C)
+#define AR0822_REG_REVISION_NUMBER CCI_REG16(0x300E)
 #define AR0822_REG_COARSE_INTEGRATION_TIME CCI_REG16(0x3012)
 #define AR0822_REG_RESET CCI_REG16(0x301A)
 #define AR0822_REG_MODE_SELECT CCI_REG8(0x301C)
@@ -1407,22 +1409,34 @@ static void ar0822_power_off(struct ar0822 *sensor)
 static int ar0822_identify_model(struct ar0822 *sensor)
 {
 	int ret;
-	u64 model_id;
+	u64 reg_val;
 
-	ret = cci_read(sensor->regmap, AR0822_REG_CHIP_VERSION, &model_id,
-		       NULL);
+	ret = cci_read(sensor->regmap, AR0822_REG_CHIP_VERSION, &reg_val, NULL);
 	if (ret < 0) {
 		dev_err_probe(sensor->dev, ret,
-			      "failed to read sensor information\n");
+			      "Failed to read chip version\n");
 		return ret;
 	}
 
-	if (model_id != AR0822_MODEL_ID) {
-		dev_err(sensor->dev, "invalid model id 0x%04llx\n", model_id);
+	if (reg_val != AR0822_MODEL_ID) {
+		dev_err(sensor->dev, "Invalid model id 0x%x\n", (u16)reg_val);
 		return -ENODEV;
 	}
 
-	dev_info(sensor->dev, "Detected AR0822 image sensor\n");
+	ret = cci_read(sensor->regmap, AR0822_REG_REVISION_NUMBER, &reg_val,
+		       NULL);
+	if (ret < 0) {
+		dev_err_probe(sensor->dev, ret,
+			      "Failed to read revision number\n");
+		return ret;
+	}
+
+	if (reg_val < AR0822_REVISION_ID_MIN)
+		dev_warn(sensor->dev, "Driver tested with rev 0x%x and later\n",
+			 AR0822_REVISION_ID_MIN);
+
+	dev_info(sensor->dev, "Detected AR0822 image sensor, rev 0x%x\n",
+		 reg_val);
 
 	return ret;
 }
