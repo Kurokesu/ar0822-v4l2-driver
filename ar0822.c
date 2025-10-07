@@ -321,19 +321,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = 1464,
+				.frame_length_lines_min = 1122,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2142,
-				.frame_length_lines_min = 1240,
+				.frame_length_lines_min = 1122,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1012,
-				.frame_length_lines_min = 2632,
+				.frame_length_lines_min = 1316,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1180,
-				.frame_length_lines_min = 2248,
+				.frame_length_lines_min = 1128,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
@@ -350,19 +350,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2140,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
