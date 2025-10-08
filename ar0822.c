@@ -438,8 +438,6 @@ static const struct cci_reg_sequence ar0822_mipi_timing_24_480_10bit[] = {
 	{ AR0822_REG_MIPI_TIMING_2, 0x80CB },
 	{ AR0822_REG_MIPI_TIMING_3, 0x030C },
 	{ AR0822_REG_MIPI_TIMING_4, 0x0E8A },
-	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AF7 },
-	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00B5 },
 	{ AR0822_REG_MIPI_F1_PDT, 0x122B },
 };
 
@@ -451,8 +449,6 @@ static const struct cci_reg_sequence ar0822_mipi_timing_24_480_12bit[] = {
 	{ AR0822_REG_MIPI_TIMING_2, 0x70CA },
 	{ AR0822_REG_MIPI_TIMING_3, 0x028A },
 	{ AR0822_REG_MIPI_TIMING_4, 0x0C08 },
-	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AEC },
-	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00A7 },
 	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
 };
 
@@ -1554,7 +1550,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	ret = 0;
 	dev_dbg(sensor->dev,
-		"clock: %lu Hz, link_frequency: %llu bps, lanes: %d\n",
+		"clock: %luHz, link_frequency: %lluHz, lanes: %d\n",
 		extclk_frequency, *sensor->pll_config->freq_link,
 		hw_config->num_data_lanes);
 
