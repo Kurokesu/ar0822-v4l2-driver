@@ -32,8 +32,8 @@
 
 #define AR0822_VTS_MAX 0xFFFF
 
-#define AR0822_RESET_MIN_DELAY_US 7000
-#define AR0822_RESET_MAX_DELAY_US (AR0822_RESET_MIN_DELAY_US + 1000)
+#define AR0822_RESET_DELAY_US_MIN 7000
+#define AR0822_RESET_DELAY_US_MAX (AR0822_RESET_DELAY_US_MIN + 1000)
 
 #define AR0822_PIXEL_NATIVE_WIDTH 3848
 #define AR0822_PIXEL_NATIVE_HEIGHT 2168
@@ -942,20 +942,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	if (ret < 0)
 		return ret;
 
-	ret = ar0822_mode_stream_on(sensor);
-	if (ret < 0)
-		return ret;
-
-	/* Datasheet states that stream ON should be toggled ON for minimum 2ms */
-	usleep_range(2000, 2100);
-
-	ret = ar0822_mode_stream_off(sensor);
-	if (ret < 0)
-		return ret;
-
-	/* Wait 160000 EXTCLKs for software standdby */
-	usleep_range(7000, 8000);
-
 	/* Configure PLL and MIPI timings */
 	ret = ar0822_config_pll(sensor);
 	if (ret < 0)
@@ -992,9 +978,6 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		dev_err(sensor->dev, "Failed to set line length: %d\n", ret);
 		return ret;
 	}
-
-	/* Wait for PLL lock */
-	usleep_range(1000, 1100);
 
 	/* Apply customized values from user */
 	ret = __v4l2_ctrl_handler_setup(sensor->subdev.ctrl_handler);
@@ -1407,8 +1390,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 
 	gpiod_set_value_cansleep(hw_config->gpio_reset, 1);
 
-	usleep_range(AR0822_RESET_MIN_DELAY_US,
-		     AR0822_RESET_MAX_DELAY_US); // TODO this can be reduced
+	usleep_range(AR0822_RESET_DELAY_US_MIN, AR0822_RESET_DELAY_US_MAX);
 
 	return 0;
 
