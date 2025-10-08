@@ -25,12 +25,12 @@
 #define AR0822_PIXEL_RATE 160000000
 #define AR0822_REG_ADDRESS_BITS 16
 
+#define AR0822_EMBEDDED_DATA_ENABLED
 #define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
 #define AR0822_NUM_EMBEDDED_LINES 4
 
-#define AR0822_VBLANK_STEP 8
-
-#define AR0822_VTS_MAX 0xFFFF
+#define AR0822_VBLANK_STEP 1
+#define AR0822_FLL_MAX 0xFFFF // Maximum frame length lines register value
 
 #define AR0822_RESET_DELAY_US_MIN 7000
 #define AR0822_RESET_DELAY_US_MAX (AR0822_RESET_DELAY_US_MIN + 1000)
@@ -42,9 +42,9 @@
 #define AR0822_PIXEL_ARRAY_TOP 8
 #define AR0822_PIXEL_ARRAY_LEFT 8
 
-#define AR0822_EXPOSURE_MIN 4
+#define AR0822_EXPOSURE_MIN 1
 #define AR0822_EXPOSURE_STEP 1
-#define AR0822_EXPOSURE_DEFAULT 0x0640
+#define AR0822_EXPOSURE_MARGIN 4
 
 #define AR0822_ANA_GAIN_MIN 0
 #define AR0822_ANA_GAIN_MAX 119
@@ -52,6 +52,7 @@
 #define AR0822_ANA_GAIN_DEFAULT 0
 
 #define AR0822_MODEL_ID 0x0F56
+#define AR0822_REVISION_MIN 0x2303
 
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
@@ -80,6 +81,7 @@
 #define AR0822_REG_X_ADDR_END CCI_REG16(0x3008)
 #define AR0822_REG_FRAME_LENGTH_LINES CCI_REG16(0x300A)
 #define AR0822_REG_LINE_LENGTH_PCK CCI_REG16(0x300C)
+#define AR0822_REG_REVISION_NUMBER CCI_REG16(0x300E)
 #define AR0822_REG_COARSE_INTEGRATION_TIME CCI_REG16(0x3012)
 #define AR0822_REG_RESET CCI_REG16(0x301A)
 #define AR0822_REG_MODE_SELECT CCI_REG8(0x301C)
@@ -221,7 +223,9 @@ struct ar0822_mode {
 
 enum pad_types {
 	IMAGE_PAD,
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	METADATA_PAD,
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	NUM_PADS,
 };
 
@@ -321,19 +325,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = 1464,
+				.frame_length_lines_min = 1122,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2142,
-				.frame_length_lines_min = 1240,
+				.frame_length_lines_min = 1122,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1012,
-				.frame_length_lines_min = 2632,
+				.frame_length_lines_min = 1316,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 1180,
-				.frame_length_lines_min = 2248,
+				.frame_length_lines_min = 1128,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
@@ -350,19 +354,19 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing = {
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 3412,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
 				.line_length_pck_min = 1812,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
 				.line_length_pck_min = 2140,
-				.frame_length_lines_min = 2184,
+				.frame_length_lines_min = 2206,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
@@ -538,7 +542,9 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_T1_NOISE_FLOOR3, 0x0004 },
 	{ AR0822_REG_PIX_DEF_ID, 0x0001 },
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 },
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
@@ -573,15 +579,14 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 {
-	int exposure_max, exposure_def;
+	int exposure_max;
 
 	/* Honour the VBLANK limits when setting exposure. */
 	exposure_max = sensor->mode.format->height + sensor->vblank->val -
-		       AR0822_EXPOSURE_MIN;
-	exposure_def = min(exposure_max, sensor->exposure->val);
+		       AR0822_EXPOSURE_MARGIN;
 	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
 				 exposure_max, sensor->exposure->step,
-				 exposure_def);
+				 exposure_max);
 }
 
 static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
@@ -681,19 +686,18 @@ static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
 
 static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
-	int hblank;
+	int hblank, vblank_min;
 	const struct ar0822_format *format = sensor->mode.format;
 	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
-	__v4l2_ctrl_modify_range(
-		sensor->vblank, timing->frame_length_lines_min - format->height,
-		AR0822_VTS_MAX - format->height, sensor->vblank->step,
-		timing->frame_length_lines_min - format->height);
+	vblank_min = timing->frame_length_lines_min - format->height;
+	__v4l2_ctrl_modify_range(sensor->vblank, vblank_min,
+				 AR0822_FLL_MAX - format->height,
+				 sensor->vblank->step, vblank_min);
 
 	/* Setting this will adjust the exposure limits as well */
-	__v4l2_ctrl_s_ctrl(sensor->vblank,
-			   timing->frame_length_lines_min - format->height);
+	__v4l2_ctrl_s_ctrl(sensor->vblank, vblank_min);
 
 	hblank = timing->line_length_pck_min - format->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
@@ -708,7 +712,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	u8 link_freq_id =
 		sensor->pll_config->freq_link - ar0822_link_frequencies;
-	u32 exposure_max, exposure_def;
+	u32 exposure_max;
 	int ret;
 
 	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 10);
@@ -751,14 +755,11 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 					   AR0822_VBLANK_STEP, 0);
 
 	/* Exposure */
-	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MIN;
-	exposure_def = (exposure_max < AR0822_EXPOSURE_DEFAULT) ?
-			       exposure_max :
-			       AR0822_EXPOSURE_DEFAULT;
+	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MARGIN;
 	sensor->exposure = v4l2_ctrl_new_std(
 		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_EXPOSURE,
 		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
-		exposure_def);
+		exposure_max);
 
 	/* Analogue gain */
 	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
@@ -1347,7 +1348,9 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
 	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
 				     sensor->pad);
 	if (ret < 0) {
@@ -1412,22 +1415,34 @@ static void ar0822_power_off(struct ar0822 *sensor)
 static int ar0822_identify_model(struct ar0822 *sensor)
 {
 	int ret;
-	u64 model_id;
+	u64 reg_val;
 
-	ret = cci_read(sensor->regmap, AR0822_REG_CHIP_VERSION, &model_id,
-		       NULL);
+	ret = cci_read(sensor->regmap, AR0822_REG_CHIP_VERSION, &reg_val, NULL);
 	if (ret < 0) {
 		dev_err_probe(sensor->dev, ret,
-			      "failed to read sensor information\n");
+			      "Failed to read chip version\n");
 		return ret;
 	}
 
-	if (model_id != AR0822_MODEL_ID) {
-		dev_err(sensor->dev, "invalid model id 0x%04llx\n", model_id);
+	if (reg_val != AR0822_MODEL_ID) {
+		dev_err(sensor->dev, "Invalid model id 0x%x\n", (u16)reg_val);
 		return -ENODEV;
 	}
 
-	dev_info(sensor->dev, "Detected AR0822 image sensor\n");
+	ret = cci_read(sensor->regmap, AR0822_REG_REVISION_NUMBER, &reg_val,
+		       NULL);
+	if (ret < 0) {
+		dev_err_probe(sensor->dev, ret,
+			      "Failed to read revision number\n");
+		return ret;
+	}
+
+	if (reg_val < AR0822_REVISION_MIN)
+		dev_warn(sensor->dev, "Driver tested with rev 0x%x and later\n",
+			 AR0822_REVISION_MIN);
+
+	dev_info(sensor->dev, "Detected AR0822 image sensor, rev 0x%x\n",
+		 reg_val);
 
 	return ret;
 }
