@@ -45,7 +45,6 @@
 #define AR0822_EXPOSURE_MIN 1
 #define AR0822_EXPOSURE_STEP 1
 #define AR0822_EXPOSURE_MARGIN 4
-#define AR0822_EXPOSURE_DEFAULT 0x0640
 
 #define AR0822_ANA_GAIN_MIN 0
 #define AR0822_ANA_GAIN_MAX 119
@@ -53,7 +52,7 @@
 #define AR0822_ANA_GAIN_DEFAULT 0
 
 #define AR0822_MODEL_ID 0x0F56
-#define AR0822_REVISION_ID_MIN 0x2303
+#define AR0822_REVISION_MIN 0x2303
 
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
@@ -1438,9 +1437,9 @@ static int ar0822_identify_model(struct ar0822 *sensor)
 		return ret;
 	}
 
-	if (reg_val < AR0822_REVISION_ID_MIN)
+	if (reg_val < AR0822_REVISION_MIN)
 		dev_warn(sensor->dev, "Driver tested with rev 0x%x and later\n",
-			 AR0822_REVISION_ID_MIN);
+			 AR0822_REVISION_MIN);
 
 	dev_info(sensor->dev, "Detected AR0822 image sensor, rev 0x%x\n",
 		 reg_val);
