@@ -25,6 +25,7 @@
 #define AR0822_PIXEL_RATE 160000000
 #define AR0822_REG_ADDRESS_BITS 16
 
+#define AR0822_EMBEDDED_DATA_ENABLED
 #define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
 #define AR0822_NUM_EMBEDDED_LINES 4
 
@@ -223,7 +224,9 @@ struct ar0822_mode {
 
 enum pad_types {
 	IMAGE_PAD,
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	METADATA_PAD,
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	NUM_PADS,
 };
 
@@ -540,7 +543,9 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_T1_NOISE_FLOOR3, 0x0004 },
 	{ AR0822_REG_PIX_DEF_ID, 0x0001 },
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 },
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
 	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
@@ -1344,7 +1349,9 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
 	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
 	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
+#endif // AR0822_EMBEDDED_DATA_ENABLED
 	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
 				     sensor->pad);
 	if (ret < 0) {
