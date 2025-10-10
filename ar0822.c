@@ -624,6 +624,7 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 };
 
+// clang-format off
 static const struct cci_reg_sequence ar0822_regs_mfr_common[] = {
 	{ CCI_REG16(0x50A2), 0x2553 },
 	{ CCI_REG16(0x50A4), 0xDFD4 },
@@ -716,6 +717,7 @@ static const struct cci_reg_sequence ar0822_regs_mfr_hdr[] = {
 	{ CCI_REG16(0x3D78), 0x0ED8 },
 	{ CCI_REG16(0x3D7A), 0x0ED8 },
 };
+// clang-format on
 
 static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 	{ AR0822_REG_OC_LUT_00, 0x2000 },
