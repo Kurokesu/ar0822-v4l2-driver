@@ -181,6 +181,7 @@
 #define AR0822_REG_T4_NOISE_FLOOR3 CCI_REG16(0x556A)
 #define AR0822_REG_T4_NOISE_GAIN_THRESHOLD1 CCI_REG16(0x556C)
 #define AR0822_REG_SENSOR_GAIN CCI_REG16(0x5900)
+#define AR0822_REG_SENSOR_GAIN_TABLE_SEL CCI_REG16(0x5914)
 #define AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH CCI_REG16(0x5930)
 
 /* Helper macro for declaring ar0822 reg sequence */
@@ -759,6 +760,7 @@ static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0008 }, // override common
 	{ AR0822_REG_DIGITAL_CTRL, 0x013E }, // override common
 	{ AR0822_REG_EXPOSURE_RATIO, 0x0044 }, // 16x
+	{ AR0822_REG_SENSOR_GAIN_TABLE_SEL, 0x4006 }, //select gain table 1 for HDR mode
 };
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
@@ -1810,7 +1812,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	if (i == ARRAY_SIZE(ar0822_pll_configs)) {
 		ret = dev_err_probe(
 			sensor->dev, -EINVAL,
-			"no valid sensor mode defined for EXTCLK %lu Hz and link frequency %llu bps\n",
+			"no valid sensor mode defined for EXTCLK %luHz and link frequency %lluHz\n",
 			extclk_frequency, endpoint_config.link_frequencies[0]);
 		goto done_endpoint_free;
 	}
