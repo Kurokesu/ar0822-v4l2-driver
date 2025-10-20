@@ -408,6 +408,24 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 				.frame_length_lines_min = 2206,
 			},
 		},
+		.timing_hdr = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = { // todo
+				.line_length_pck_min = 3412,
+				.frame_length_lines_min = 2206,
+			},
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = { // todo
+				.line_length_pck_min = 4062,
+				.frame_length_lines_min = 2206,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = { // todo
+				.line_length_pck_min = 1812,
+				.frame_length_lines_min = 2206,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 2376,
+				.frame_length_lines_min = 2304,
+			},
+		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
 	},
 };
