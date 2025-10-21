@@ -138,7 +138,7 @@ Download a local copy of Kurokesu's fork of `libcamera` with `ar0822` modificati
 
 ```bash
 cd ~
-git clone --single-branch --branch ar0822 https://github.com/Kurokesu/libcamera.git
+git clone https://github.com/Kurokesu/libcamera.git --branch ar0822
 cd libcamera/
 ```
 
