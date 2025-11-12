@@ -526,6 +526,32 @@ static const struct cci_reg_sequence ar0822_mipi_timing_24_960_12bit[] = {
 	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
 };
 
+static const struct cci_reg_sequence ar0822_mipi_timing_27_492_10bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x0080 },
+	{ AR0822_REG_LINE_PREAMBLE, 0x0056 },
+	{ AR0822_REG_MIPI_TIMING_0, 0x6249 },
+	{ AR0822_REG_MIPI_TIMING_1, 0x52CA },
+	{ AR0822_REG_MIPI_TIMING_2, 0x80CC },
+	{ AR0822_REG_MIPI_TIMING_3, 0x030D },
+	{ AR0822_REG_MIPI_TIMING_4, 0x0F0A },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AF9 },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00BA },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122B },
+};
+
+static const struct cci_reg_sequence ar0822_mipi_timing_27_492_12bit[] = {
+	{ AR0822_REG_FRAME_PREAMBLE, 0x0071 },
+	{ AR0822_REG_LINE_PREAMBLE, 0x004D },
+	{ AR0822_REG_MIPI_TIMING_0, 0x51C8 },
+	{ AR0822_REG_MIPI_TIMING_1, 0x5288 },
+	{ AR0822_REG_MIPI_TIMING_2, 0x70CA },
+	{ AR0822_REG_MIPI_TIMING_3, 0x030B },
+	{ AR0822_REG_MIPI_TIMING_4, 0x0C89 },
+	{ AR0822_REG_MIPI_DESKEW_PAT_WIDTH, 0x0AF0 },
+	{ AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH, 0x00AA },
+	{ AR0822_REG_MIPI_F1_PDT, 0x122C },
+};
+
 static const struct ar0822_pll_config ar0822_pll_configs[] = {
 	{
 		.freq_link =
