@@ -22,7 +22,8 @@
 #include <media/v4l2-fwnode.h>
 #include <media/v4l2-subdev.h>
 
-#define AR0822_PIXEL_RATE 160000000
+#define AR0822_PIXEL_RATE_EXTCLK_24 160000000
+#define AR0822_PIXEL_RATE_EXTCLK_27 164250000
 #define AR0822_REG_ADDRESS_BITS 16
 
 #define AR0822_EMBEDDED_DATA_ENABLED
@@ -255,16 +256,19 @@ struct ar0822 {
 enum ar0822_extclk_link_id {
 	AR0822_EXTCLK_LINK_ID_24_480 = 0,
 	AR0822_EXTCLK_LINK_ID_24_960,
+	AR0822_EXTCLK_LINK_ID_27_492,
 };
 
 static const u64 ar0822_extclk_frequencies[] = {
 	[AR0822_EXTCLK_LINK_ID_24_480] = 24000000,
 	[AR0822_EXTCLK_LINK_ID_24_960] = 24000000,
+	[AR0822_EXTCLK_LINK_ID_27_492] = 27000000,
 };
 
 static const s64 ar0822_link_frequencies[] = {
 	[AR0822_EXTCLK_LINK_ID_24_480] = 480000000,
 	[AR0822_EXTCLK_LINK_ID_24_960] = 960000000,
+	[AR0822_EXTCLK_LINK_ID_27_492] = 492750000,
 };
 
 static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_ID_AMOUNT] = {
@@ -286,6 +290,14 @@ static const struct cci_reg_sequence ar0822_pll_config_24_960[] = {
 	{ AR0822_REG_VT_SYS_CLK_DIV, 0x0002 },
 	{ AR0822_REG_VT_PIX_CLK_DIV, 0x0006 },
 	{ AR0822_REG_OP_SYS_CLK_DIV, 0x0002 },
+};
+
+static const struct cci_reg_sequence ar0822_pll_config_27_492[] = {
+	{ AR0822_REG_PLL_MULTIPLIER, 0x0092 },
+	{ AR0822_REG_PRE_PLL_CLK_DIV, 0x0002 },
+	{ AR0822_REG_VT_SYS_CLK_DIV, 0x0002 },
+	{ AR0822_REG_VT_PIX_CLK_DIV, 0x0006 },
+	{ AR0822_REG_OP_SYS_CLK_DIV, 0x0004 },
 };
 
 static const struct cci_reg_sequence ar0822_1080p_config[] = {
@@ -488,7 +500,7 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
 		.freq_extclk =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
-		.pixel_rate = AR0822_PIXEL_RATE,
+		.pixel_rate = AR0822_PIXEL_RATE_EXTCLK_24,
 		.formats = ar0822_formats_24_480,
 		.formats_amount = ARRAY_SIZE(ar0822_formats_24_480),
 		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_480),
@@ -502,7 +514,7 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
 		.freq_extclk =
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
-		.pixel_rate = AR0822_PIXEL_RATE,
+		.pixel_rate = AR0822_PIXEL_RATE_EXTCLK_24,
 		.formats = ar0822_formats_24_960,
 		.formats_amount = ARRAY_SIZE(ar0822_formats_24_960),
 		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_960),
