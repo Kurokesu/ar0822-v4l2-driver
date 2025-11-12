@@ -446,6 +446,38 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 	},
 };
 
+static const struct ar0822_format ar0822_formats_27_492[] = {
+	{
+		.width = 1920,
+		.height = 1080,
+		.crop = {
+			.top = AR0822_PIXEL_ARRAY_TOP,
+			.left = AR0822_PIXEL_ARRAY_LEFT,
+			.width = 3840,
+			.height = 2160,
+		},
+		.timing = {
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 1858,
+				.frame_length_lines_min = 1104,
+			},
+			[AR0822_LANE_MODE_ID_2][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 2152,
+				.frame_length_lines_min = 1104,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_10BIT] = {
+				.line_length_pck_min = 1858,
+				.frame_length_lines_min = 1104,
+			},
+			[AR0822_LANE_MODE_ID_4][AR0822_BIT_DEPTH_ID_12BIT] = {
+				.line_length_pck_min = 1238,
+				.frame_length_lines_min = 1104,
+			},
+		},
+		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
+	},
+};
+
 static const struct cci_reg_sequence ar0822_mipi_timing_24_480_10bit[] = {
 	{ AR0822_REG_FRAME_PREAMBLE, 0x007D },
 	{ AR0822_REG_LINE_PREAMBLE, 0x0054 },
