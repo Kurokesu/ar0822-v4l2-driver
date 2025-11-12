@@ -581,6 +581,20 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_960_12bit),
 		},
 	},
+	{
+		.freq_link =
+			&ar0822_link_frequencies[AR0822_EXTCLK_LINK_ID_27_492],
+		.freq_extclk =
+			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_27_492],
+		.pixel_rate = AR0822_PIXEL_RATE_EXTCLK_27,
+		.formats = ar0822_formats_27_492,
+		.formats_amount = ARRAY_SIZE(ar0822_formats_27_492),
+		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_27_492),
+		.regs_mipi = {
+			[AR0822_BIT_DEPTH_ID_10BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_27_492_10bit),
+			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_27_492_12bit),
+		},
+	},
 };
 
 static const char *const ar0822_test_pattern_menu[] = {
