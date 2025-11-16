@@ -1442,7 +1442,7 @@ static int ar0822_identify_model(struct ar0822 *sensor)
 			 AR0822_REVISION_MIN);
 
 	dev_info(sensor->dev, "Detected AR0822 image sensor, rev 0x%x\n",
-		 reg_val);
+		 (u16)reg_val);
 
 	return ret;
 }
