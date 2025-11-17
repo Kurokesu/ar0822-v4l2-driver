@@ -60,8 +60,8 @@
 #define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
 #define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
 
-#define AR0822_DATA_FORMAT_RAW_DEF 12 // ADC raw data size in bits
-#define AR0822_DATA_FORMAT_RAW_HDR 20 // ADC raw data size in bits
+#define AR0822_DATA_FORMAT_RAW_LIN 12 // ADC raw data size in bits (linear)
+#define AR0822_DATA_FORMAT_RAW_HDR 20 // ADC raw data size in bits (HDR)
 
 #define AR0822_TEST_PATTERN_DISABLED 0
 #define AR0822_TEST_PATTERN_SOLID_COLOR 1
@@ -1141,7 +1141,7 @@ static int ar0822_config_serial_format(struct ar0822 *sensor)
 	int ret;
 	u8 bit_depth;
 	u16 data_format = sensor->mode.hdr ? AR0822_DATA_FORMAT_RAW_HDR :
-					     AR0822_DATA_FORMAT_RAW_DEF;
+					     AR0822_DATA_FORMAT_RAW_LIN;
 
 	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
 	if (ret < 0)
