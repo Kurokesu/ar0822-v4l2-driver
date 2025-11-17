@@ -220,7 +220,7 @@ struct ar0822_format {
 	struct ar0822_timing timing_no_hdr[AR0822_LANE_MODE_ID_AMOUNT]
 					  [AR0822_BIT_DEPTH_ID_AMOUNT];
 
-	/* Only 12bit HDR mode supported. */
+	/* Only 12bit companded HDR mode currently supported. */
 	struct ar0822_timing timing_hdr[AR0822_LANE_MODE_ID_AMOUNT];
 
 	struct ar0822_reg_sequence reg_sequence;
@@ -381,13 +381,13 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 			},
 		},
 		.timing_hdr = {
-			[AR0822_LANE_MODE_ID_2] = { // todo
-				.line_length_pck_min = 2142,
-				.frame_length_lines_min = 1122,
+			[AR0822_LANE_MODE_ID_2] = {
+				.line_length_pck_min = 2372,
+				.frame_length_lines_min = 2248,
 			},
-			[AR0822_LANE_MODE_ID_4] = { // todo
-				.line_length_pck_min = 1180,
-				.frame_length_lines_min = 1128,
+			[AR0822_LANE_MODE_ID_4] = {
+				.line_length_pck_min = 2372,
+				.frame_length_lines_min = 2248,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
@@ -420,13 +420,13 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 			},
 		},
 		.timing_hdr = {
-			[AR0822_LANE_MODE_ID_2] = { // todo
+			[AR0822_LANE_MODE_ID_2] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = 2206,
+				.frame_length_lines_min = 2326,
 			},
 			[AR0822_LANE_MODE_ID_4] = {
-				.line_length_pck_min = 2376,
-				.frame_length_lines_min = 2304,
+				.line_length_pck_min = 2372,
+				.frame_length_lines_min = 2326,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
