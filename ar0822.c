@@ -45,6 +45,7 @@
 #define AR0822_EXPOSURE_MIN 1
 #define AR0822_EXPOSURE_STEP 1
 #define AR0822_EXPOSURE_MARGIN 4
+#define AR0822_EXPOSURE_HDR_MAX 2048 // Max exposure in all HDR modes
 
 #define AR0822_ANA_GAIN_MIN 0
 #define AR0822_ANA_GAIN_MAX 119
@@ -775,10 +776,14 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 {
-	int exposure_max;
+	/* 
+	 * All eHDR mode FLL limits are currently chosen to accommodate 
+	 * max exposure range.
+	 */
+	int exposure_max = AR0822_EXPOSURE_HDR_MAX;
 
-	/* Honour the VBLANK limits when setting exposure. */
 	if (!sensor->mode.hdr) {
+		/* Honour the VBLANK limits when setting non HDR exposure. */
 		exposure_max = sensor->mode.format->height +
 			       sensor->vblank->val - AR0822_EXPOSURE_MARGIN;
 	}
