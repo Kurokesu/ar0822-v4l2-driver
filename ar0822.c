@@ -1164,7 +1164,7 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 {
 	int ret = 0;
 
-	if (sensor->hdr_mode->val) {
+	if (sensor->mode.hdr) {
 		dev_dbg(sensor->dev, "Initializing hdr mfr registers\n");
 		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_mfr_hdr,
 					  ARRAY_SIZE(ar0822_regs_mfr_hdr),
