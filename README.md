@@ -261,7 +261,7 @@ AR0822 features an on‑sensor HDR mode that expands dynamic range up to 120 d
 
 eHDR mode is enabled by appending `--hdr` to `rpicam` commands.
 
-### List eHDR camera formats
+### List supported eHDR mode formats
 
 ```bash
 rpicam-hello --list-cameras --hdr
