@@ -4,6 +4,11 @@ The AR0822 is a high-resolution CMOS image sensor that supports up to 4K video c
 
 This guide provides detailed instructions on how to install the AR0822 kernel driver on a Linux system, specifically Raspbian.
 
+> [!NOTE]
+> This driver supports an experimental eHDR mode, modeled after the IMX708
+> implementation, by exposing the standard `V4L2_CID_WIDE_DYNAMIC_RANGE` control.
+> Read more about it in [eHDR (experimental)](#ehdr-experimental).
+
 ## Prerequisites
 
 **Kernel version**: You should be running on a Linux kernel version 6.1 or newer. You can verify your kernel version by executing `uname -r` in your terminal.
@@ -166,11 +171,11 @@ sudo ninja -C build install
 
 #### Clone the rpicam-apps Repository
 
-Download a local copy of Raspberry Pi’s `rpicam-apps` GitHub repository:
+Download a local copy of Kurokesu’s `rpicam-apps` fork, which contains HDR modifications:
 
 ```bash
 cd ~
-git clone https://github.com/raspberrypi/rpicam-apps.git
+git clone https://github.com/Kurokesu/rpicam-apps.git --branch hdr-ar0822
 cd rpicam-apps
 ```
 
@@ -216,7 +221,7 @@ rpicam-hello --version
 You should get output similar to this, with your build date:
 
 ```
-rpicam-apps build: v1.9.0 000000000000-invalid 19-09-2025 (16:54:42)
+rpicam-apps build: v1.10.0 19-11-2025 (12:25:28)
 rpicam-apps capabilites: egl:1 qt:1 drm:1 libav:1
 libcamera build: v0.5.2
 ```
@@ -245,6 +250,37 @@ Available cameras
                              3840x2160 [40.03 fps - (0, 0)/3840x2160 crop]
            'SGRBG12_CSI2P' : 1920x1080 [120.21 fps - (0, 0)/3840x2160 crop]
                              3840x2160 [33.89 fps - (0, 0)/3840x2160 crop]
+```
+
+## eHDR (experimental)
+
+AR0822 features an on‑sensor HDR mode that expands dynamic range up to 120 dB by combining three exposures within the sensor using the MEC algorithm. To reduce bandwidth requirements even further, the linearized 20‑bit HDR signal is companded to a 12‑bit output.
+
+> [!IMPORTANT] 
+> libcamera pipeline is designed to work with linear image data from sensor,
+> so while Kurokesu's libcamera fork HDR implementation is in experimental
+> stage, companded data may have some color shifts due to compression.
+
+Because of the way exposure range limitations work in sensor, running at maximum FPS with current PIXCLK configuration will reduce maximum exposure drastically.
+
+For instance, running 4k @ 30fps results in maximum exposure T1 ≈ 10.26ms, while running 4k @ 28.8fps results in T1 ≈ 30.4ms (right at the internal delay buffer limit).
+
+Consider reducing framerate slightly when larger exposure range is desired, this will be addressed in future revisions of the driver.
+
+eHDR mode is enabled by appending `--hdr` to `rpicam` commands.
+
+### List supported eHDR mode formats
+
+```bash
+rpicam-hello --list-cameras --hdr
+```
+
+```
+Available cameras
+-----------------
+0 : ar0822 [3840x2160 12-bit GRBG] (/base/axi/pcie@1000120000/rp1/i2c@88000/ar0822@10)
+    Modes: 'SGRBG12_CSI2P' : 1920x1080 [48.04 fps - (0, 0)/3840x2160 crop]
+                             3840x2160 [30.01 fps - (0, 0)/3840x2160 crop]
 ```
 
 ## Special Thanks
