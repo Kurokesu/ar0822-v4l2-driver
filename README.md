@@ -270,9 +270,9 @@ rpicam-hello --list-cameras --hdr
 ```
 Available cameras
 -----------------
-0 : ar0822 [3840x2160 12-bit GRBG] (/base/axi/pcie@1000120000/rp1/i2c@80000/ar0822@10)
-    Modes: 'SGRBG12_CSI2P' : 1920x1080 [30.01 fps - (0, 0)/3840x2160 crop]
-                             3840x2160 [29.00 fps - (0, 0)/3840x2160 crop]
+0 : ar0822 [3840x2160 12-bit GRBG] (/base/axi/pcie@1000120000/rp1/i2c@88000/ar0822@10)
+    Modes: 'SGRBG12_CSI2P' : 1920x1080 [48.04 fps - (0, 0)/3840x2160 crop]
+                             3840x2160 [30.01 fps - (0, 0)/3840x2160 crop]
 ```
 
 ## Special Thanks
