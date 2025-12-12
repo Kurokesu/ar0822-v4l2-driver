@@ -45,7 +45,12 @@
 #define AR0822_EXPOSURE_MIN 1
 #define AR0822_EXPOSURE_STEP 1
 #define AR0822_EXPOSURE_MARGIN 4
-#define AR0822_EXPOSURE_HDR_MAX 2048 // Max exposure in all HDR modes
+
+/*
+ * Maximum exposure in HDR mode that respects T2+2*T3<=144 delay buffer rule.
+ * Assuming default 16x integration time ratios.
+ */
+#define AR0822_EXPOSURE_HDR_MAX 2048
 
 #define AR0822_ANA_GAIN_MIN 0
 #define AR0822_ANA_GAIN_MAX 119
@@ -776,16 +781,36 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 {
-	/* 
-	 * All eHDR mode FLL limits are currently chosen to accommodate 
-	 * max exposure range.
-	 */
-	int exposure_max = AR0822_EXPOSURE_HDR_MAX;
+	int exposure_max;
+	u32 frame_length_lines = sensor->mode.format->height + sensor->vblank->val;
 
-	if (!sensor->mode.hdr) {
-		/* Honour the VBLANK limits when setting non HDR exposure. */
-		exposure_max = sensor->mode.format->height +
-			       sensor->vblank->val - AR0822_EXPOSURE_MARGIN;
+	if (sensor->mode.hdr) {
+		/* 
+		 * Limit exposure range ensuring fixed FPS based on frame length lines.
+		 * Calculate sensor internal vblank (not v4l2) based on output rows.
+		 * With 4 embedded data rows enabled, output rows amount
+		 * is 2174 @ 4k and 1092 @ 1080p.
+		 * Following HDR exposure limit calculations assume that T1/T2 and 
+		 * T2/T3 ratios are at their default 16x settings. 
+		 */
+		u16 rows = (sensor->mode.format->height == 2160) ? 2174 : 1092;
+		u32 vblank = frame_length_lines - rows;
+		u32 fll_limit;
+
+		/* Calculate exposure limit for T2+T3 <= vblank-28 */
+		exposure_max = ((vblank-28)*256)/17;
+
+		/* Calculate exposure limit for T1+T2+T3+28 <= fll */
+		fll_limit = ((frame_length_lines-28)*256)/273;
+
+		if (exposure_max > fll_limit)
+			exposure_max = fll_limit;
+
+		/* Ensure delay buffers are not exceeded T2+2*T3 <= 144 */
+		if (exposure_max > AR0822_EXPOSURE_HDR_MAX)
+			exposure_max = AR0822_EXPOSURE_HDR_MAX;
+	} else {
+		exposure_max = frame_length_lines - AR0822_EXPOSURE_MARGIN;
 	}
 
 	__v4l2_ctrl_modify_range(sensor->exposure, sensor->exposure->minimum,
