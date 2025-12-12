@@ -262,7 +262,9 @@ AR0822 features an on‑sensor HDR mode that expands dynamic range up to 120 d
 > stage, companded data may have some color shifts due to compression.
 
 Because of the way exposure range limitations work in sensor, running at maximum FPS with current PIXCLK configuration will reduce maximum exposure drastically.
-For instance, running 4k @ 30fps results in maximum exposure T1 ≈ 10.26ms, while running 4k @ 28.8fps results in T1 ≈ 30.4ms.
+
+For instance, running 4k @ 30fps results in maximum exposure T1 ≈ 10.26ms, while running 4k @ 28.8fps results in T1 ≈ 30.4ms (right at the internal delay buffer limit).
+
 Consider reducing framerate slightly when larger exposure range is desired, this will be addressed in future revisions of the driver.
 
 eHDR mode is enabled by appending `--hdr` to `rpicam` commands.
