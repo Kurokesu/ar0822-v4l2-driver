@@ -175,7 +175,7 @@ Download a local copy of Kurokesu’s `rpicam-apps` fork, which contains HDR mod
 
 ```bash
 cd ~
-git clone --branch hdr-ar0822 https://github.com/Kurokesu/rpicam-apps.git
+git clone https://github.com/Kurokesu/rpicam-apps.git --branch hdr-ar0822
 cd rpicam-apps
 ```
 
