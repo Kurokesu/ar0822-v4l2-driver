@@ -428,11 +428,11 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 		.timing_hdr = {
 			[AR0822_LANE_MODE_ID_2] = {
 				.line_length_pck_min = 4062,
-				.frame_length_lines_min = 2326,
+				.frame_length_lines_min = 2338,
 			},
 			[AR0822_LANE_MODE_ID_4] = {
 				.line_length_pck_min = 2372,
-				.frame_length_lines_min = 2326,
+				.frame_length_lines_min = 2248,
 			},
 		},
 		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
