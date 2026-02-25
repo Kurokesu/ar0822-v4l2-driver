@@ -1,5 +1,7 @@
 # Kernel Driver for AR0822
 
+[![code formatting](https://github.com/Kurokesu/ar0822-v4l2-driver/actions/workflows/clang-format.yml/badge.svg)](https://github.com/Kurokesu/ar0822-v4l2-driver/actions/workflows/clang-format.yml)
+
 The AR0822 is a high-resolution CMOS image sensor that supports up to 4K video capture. This driver enables the sensor to work with the Raspberry Pi's MIPI CSI interface, supporting both 2-lane and 4-lane configurations.
 
 This guide provides detailed instructions on how to install the AR0822 kernel driver on a Linux system, specifically Raspbian.
