@@ -191,9 +191,10 @@
 #define AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH CCI_REG16(0x5930)
 
 /* Helper macro for declaring ar0822 reg sequence */
-#define AR0822_REG_SEQ(_reg_array)                                      \
-	{                                                               \
-		.regs = (_reg_array), .amount = ARRAY_SIZE(_reg_array), \
+#define AR0822_REG_SEQ(_reg_array)                \
+	{                                         \
+		.regs = (_reg_array),             \
+		.amount = ARRAY_SIZE(_reg_array), \
 	}
 
 struct ar0822_timing {
@@ -782,7 +783,8 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 {
 	int exposure_max;
-	u32 frame_length_lines = sensor->mode.format->height + sensor->vblank->val;
+	u32 frame_length_lines =
+		sensor->mode.format->height + sensor->vblank->val;
 
 	if (sensor->mode.hdr) {
 		/* 
@@ -798,10 +800,10 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 		u32 fll_limit;
 
 		/* Calculate exposure limit for T2+T3 <= vblank-28 */
-		exposure_max = ((vblank-28)*256)/17;
+		exposure_max = ((vblank - 28) * 256) / 17;
 
 		/* Calculate exposure limit for T1+T2+T3+28 <= fll */
-		fll_limit = ((frame_length_lines-28)*256)/273;
+		fll_limit = ((frame_length_lines - 28) * 256) / 273;
 
 		if (exposure_max > fll_limit)
 			exposure_max = fll_limit;
