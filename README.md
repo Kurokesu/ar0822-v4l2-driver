@@ -258,9 +258,9 @@ rpicam-hello --version
 You should get output similar to this, with your build date:
 
 ```
-rpicam-apps build: v1.10.0 19-11-2025 (12:25:28)
+rpicam-apps build: v1.11.1 d2836f37957f 25-02-2026 (14:43:27)
 rpicam-apps capabilites: egl:1 qt:1 drm:1 libav:1
-libcamera build: v0.5.2
+libcamera build: v0.0.0+6160-8903357b
 ```
 
 ### Verify that `ar0822` is detected
