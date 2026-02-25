@@ -208,17 +208,21 @@ meson setup build -Denable_libav=enabled -Denable_drm=enabled -Denable_egl=enabl
 > 
 > - **Debian Bookworm**: the packaged `libav*` version is **too old** to build `rpicam-apps` releases **newer than v1.9.0** with libav enabled.
 >   - On Bookworm this typically shows up as build errors like “libavcodec API version is too old”, because Bookworm ships `libavcodec` **59.x** while newer `rpicam-apps` expects **libavcodec >= 60** (see [Raspberry Pi forum thread](https://forums.raspberrypi.com/viewtopic.php?t=392649)).
->   - If you want libav support on Bookworm, check out the `rpicam-apps` **v1.9.0** before running `meson setup`:
+>   - If you want libav support on Bookworm, clone the **upstream** `rpicam-apps` and check out **v1.9.0** instead of the Kurokesu fork:
 > 
 >     ```bash
+>     cd ~
+>     git clone https://github.com/raspberrypi/rpicam-apps.git
+>     cd rpicam-apps
 >     git checkout v1.9.0
 >     ```
->   - If you are building **`rpicam-apps` > v1.9.0** on Bookworm, you must disable libav:
+>     **Note:** this uses the upstream repository, so eHDR support will **not** be available in this configuration.
+>   - If you want eHDR support on Bookworm (using the Kurokesu fork), you must disable libav:
 >
 >     ```bash
 >     meson setup build -Denable_libav=disabled -Denable_drm=enabled -Denable_egl=enabled -Denable_qt=enabled -Denable_opencv=disabled -Denable_tflite=disabled -Denable_hailo=disabled
 >     ```
-> - **Debian Trixie**: build `rpicam-apps` as usual with `-Denable_libav=enabled` (no need to check out an older version).
+> - **Debian Trixie**: build `rpicam-apps` as usual with `-Denable_libav=enabled` (the Kurokesu fork supports both libav and eHDR).
 
 #### Build rpicam-apps
 
