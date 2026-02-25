@@ -4,9 +4,12 @@
 [![Raspberry Pi OS Bookworm](https://img.shields.io/badge/Raspberry_Pi_OS-Bookworm-blue?logo=raspberrypi)](https://www.debian.org/releases/bookworm/)
 [![Raspberry Pi OS Trixie](https://img.shields.io/badge/Raspberry_Pi_OS-Trixie-blue?logo=raspberrypi)](https://www.debian.org/releases/trixie/)
 
-The AR0822 is a high-resolution CMOS image sensor that supports up to 4K video capture. This driver enables the sensor to work with the Raspberry Pi's MIPI CSI interface, supporting both 2-lane and 4-lane configurations.
+Raspberry Pi kernel driver for the Onsemi AR0822 — an 8MP rolling shutter 1/1.8" back side illuminated CMOS sensor.
 
-This guide provides detailed instructions on how to install the AR0822 kernel driver on a Linux system, specifically Raspbian.
+- 2-lane and 4-lane MIPI CSI-2 (up to 960 Mbps/lane)
+- 10-bit and 12-bit RAW output
+- 3840×2160 @ 40 fps (full resolution)
+- 1920×1080 @ 120 fps (2×2 binning)
 
 > [!NOTE]
 > This driver supports an experimental eHDR mode, modeled after the IMX708
