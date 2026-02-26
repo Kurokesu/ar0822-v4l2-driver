@@ -22,9 +22,6 @@ Raspberry Pi kernel driver for the Onsemi AR0822 — an 8MP rolling shutter 1/1.
    
 ## Installation Steps
 
-> [!IMPORTANT]
-> The default branch has been renamed from `master` to `main`. Existing clones need updating — see [Branch rename](#branch-rename).
-
 ### Development Tools
 
 Required tools: `git`, `dkms`. If not already installed, install with:
@@ -321,17 +318,6 @@ Available cameras
 0 : ar0822 [3840x2160 12-bit GRBG] (/base/axi/pcie@1000120000/rp1/i2c@88000/ar0822@10)
     Modes: 'SGRBG12_CSI2P' : 1920x1080 [48.04 fps - (0, 0)/3840x2160 crop]
                              3840x2160 [30.01 fps - (0, 0)/3840x2160 crop]
-```
-
-## Branch rename
-
-The default branch has been renamed from `master` to `main`. If you have an existing local clone, run:
-
-```bash
-git fetch origin
-git branch -m master main
-git branch -u origin/main main
-git remote set-head origin -a
 ```
 
 ## Special Thanks
