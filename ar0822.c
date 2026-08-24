@@ -287,6 +287,7 @@ struct ar0822 {
 	struct v4l2_ctrl *exposure;
 	struct v4l2_ctrl *hdr_mode;
 
+	/* Protects mode, fmt_code and streaming state */
 	struct mutex mutex;
 	bool streaming;
 	struct ar0822_mode mode;
