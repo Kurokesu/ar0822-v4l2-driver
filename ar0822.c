@@ -227,12 +227,12 @@ struct ar0822_format {
 };
 
 struct ar0822_pll_config {
-	s64 const *freq_link;
-	u64 const *freq_extclk;
+	const s64 *freq_link;
+	const u64 *freq_extclk;
 	unsigned long pixel_rate;
 
 	unsigned int num_formats;
-	struct ar0822_format const *formats;
+	const struct ar0822_format *formats;
 
 	struct ar0822_reg_sequence regs_pll;
 	struct ar0822_reg_sequence regs_mipi[AR0822_NUM_BIT_DEPTHS];
@@ -255,7 +255,7 @@ struct ar0822_hw_config {
 };
 
 struct ar0822_mode {
-	struct ar0822_format const *format;
+	const struct ar0822_format *format;
 	enum ar0822_bit_depth_id bit_depth;
 	bool hdr;
 };
@@ -271,7 +271,7 @@ enum pad_types {
 struct ar0822 {
 	struct device *dev;
 	struct ar0822_hw_config hw_config;
-	struct ar0822_pll_config const *pll_config;
+	const struct ar0822_pll_config *pll_config;
 
 	struct regmap *regmap;
 
@@ -843,7 +843,7 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 				 exposure_max);
 }
 
-static struct ar0822_timing const *ar0822_get_timing(struct ar0822 *sensor)
+static const struct ar0822_timing *ar0822_get_timing(struct ar0822 *sensor)
 {
 	if (sensor->mode.hdr) {
 		return &sensor->mode.format
@@ -858,7 +858,7 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 {
 	int hblank, vblank_min;
 	const struct ar0822_format *format = sensor->mode.format;
-	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
+	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
 	vblank_min = timing->frame_length_lines_min - format->height;
@@ -983,7 +983,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
-	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
+	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
 	u8 link_freq_id =
 		sensor->pll_config->freq_link - ar0822_link_frequencies;
@@ -1142,7 +1142,7 @@ static int ar0822_get_bit_depth(enum ar0822_bit_depth_id id, u8 *bit_depth)
 
 static inline int
 ar0822_reg_seq_write(struct regmap *regmap,
-		     struct ar0822_reg_sequence const *reg_sequence)
+		     const struct ar0822_reg_sequence *reg_sequence)
 {
 	return cci_multi_reg_write(regmap, reg_sequence->regs,
 				   reg_sequence->num_regs, NULL);
@@ -1238,7 +1238,7 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 static int ar0822_start_streaming(struct ar0822 *sensor)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
-	struct ar0822_timing const *timing = ar0822_get_timing(sensor);
+	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 	int ret;
 
 	ret = pm_runtime_resume_and_get(&client->dev);
@@ -1543,7 +1543,7 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
-	struct ar0822_format const *format;
+	const struct ar0822_format *format;
 	struct v4l2_mbus_framefmt *framefmt;
 
 	if (fmt->pad >= NUM_PADS)
