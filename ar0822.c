@@ -757,6 +757,7 @@ static const struct cci_reg_sequence ar0822_regs_mfr_hdr[] = {
 	{ CCI_REG16(0x3D78), 0x0ED8 },
 	{ CCI_REG16(0x3D7A), 0x0ED8 },
 };
+
 /* clang-format on */
 
 static const struct cci_reg_sequence ar0822_regs_hdr[] = {
