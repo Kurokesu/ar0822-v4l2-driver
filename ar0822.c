@@ -1673,8 +1673,6 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 {
 	int ret;
 
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
 	ret = ar0822_ctrls_init(sensor);
 	if (ret)
 		return ret;
@@ -1717,8 +1715,6 @@ static int ar0822_power_on(struct ar0822 *sensor)
 	int ret;
 	struct ar0822_hw_config *hw_config = &sensor->hw_config;
 
-	dev_dbg(sensor->dev, "%s\n", __func__);
-
 	ret = regulator_bulk_enable(AR0822_NUM_SUPPLIES, hw_config->supplies);
 	if (ret < 0)
 		return ret;
@@ -1741,7 +1737,6 @@ err_reset:
 
 static void ar0822_power_off(struct ar0822 *sensor)
 {
-	dev_dbg(sensor->dev, "%s\n", __func__);
 	clk_disable_unprepare(sensor->hw_config.extclk);
 	gpiod_set_value_cansleep(sensor->hw_config.gpio_reset, 0);
 	regulator_bulk_disable(AR0822_NUM_SUPPLIES, sensor->hw_config.supplies);
