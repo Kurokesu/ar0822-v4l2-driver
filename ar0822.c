@@ -190,13 +190,6 @@
 #define AR0822_REG_SENSOR_GAIN_TABLE_SEL CCI_REG16(0x5914)
 #define AR0822_REG_MIPI_PER_DESKEW_PAT_WIDTH CCI_REG16(0x5930)
 
-/* Helper macro for declaring ar0822 reg sequence */
-#define AR0822_REG_SEQ(_reg_array)                \
-	{                                         \
-		.regs = (_reg_array),             \
-		.amount = ARRAY_SIZE(_reg_array), \
-	}
-
 struct ar0822_timing {
 	unsigned int line_length_pck_min;
 	unsigned int frame_length_lines_min;
@@ -215,8 +208,8 @@ enum ar0822_bit_depth_id {
 };
 
 struct ar0822_reg_sequence {
-	unsigned int amount;
-	struct cci_reg_sequence const *regs;
+	unsigned int num_regs;
+	const struct cci_reg_sequence *regs;
 };
 
 struct ar0822_format {
@@ -397,7 +390,10 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 				.frame_length_lines_min = 1404,
 			},
 		},
-		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
+		.reg_sequence = {
+			.regs = ar0822_1080p_config,
+			.num_regs = ARRAY_SIZE(ar0822_1080p_config),
+		},
 	},
 	{
 		.width = 3840,
@@ -436,7 +432,10 @@ static const struct ar0822_format ar0822_formats_24_480[] = {
 				.frame_length_lines_min = 2248,
 			},
 		},
-		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
+		.reg_sequence = {
+			.regs = ar0822_4k_config,
+			.num_regs = ARRAY_SIZE(ar0822_4k_config),
+		},
 	},
 };
 
@@ -478,7 +477,10 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 				.frame_length_lines_min = 3360, //todo
 			},
 		},
-		.reg_sequence = AR0822_REG_SEQ(ar0822_1080p_config),
+		.reg_sequence = {
+			.regs = ar0822_1080p_config,
+			.num_regs = ARRAY_SIZE(ar0822_1080p_config),
+		},
 	},
 	{
 		.width = 3840,
@@ -517,7 +519,10 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 				.frame_length_lines_min = 2248,
 			},
 		},
-		.reg_sequence = AR0822_REG_SEQ(ar0822_4k_config),
+		.reg_sequence = {
+			.regs = ar0822_4k_config,
+			.num_regs = ARRAY_SIZE(ar0822_4k_config),
+		},
 	},
 };
 
@@ -578,10 +583,19 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 		.pixel_rate = AR0822_PIXEL_RATE,
 		.formats = ar0822_formats_24_480,
 		.formats_amount = ARRAY_SIZE(ar0822_formats_24_480),
-		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_480),
+		.regs_pll = {
+			.regs = ar0822_pll_config_24_480,
+			.num_regs = ARRAY_SIZE(ar0822_pll_config_24_480),
+		},
 		.regs_mipi = {
-			[AR0822_BIT_DEPTH_ID_10BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_480_10bit),
-			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_480_12bit),
+			[AR0822_BIT_DEPTH_ID_10BIT] = {
+				.regs = ar0822_mipi_timing_24_480_10bit,
+				.num_regs = ARRAY_SIZE(ar0822_mipi_timing_24_480_10bit),
+			},
+			[AR0822_BIT_DEPTH_ID_12BIT] = {
+				.regs = ar0822_mipi_timing_24_480_12bit,
+				.num_regs = ARRAY_SIZE(ar0822_mipi_timing_24_480_12bit),
+			},
 		},
 	},
 	{
@@ -592,10 +606,19 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 		.pixel_rate = AR0822_PIXEL_RATE,
 		.formats = ar0822_formats_24_960,
 		.formats_amount = ARRAY_SIZE(ar0822_formats_24_960),
-		.regs_pll = AR0822_REG_SEQ(ar0822_pll_config_24_960),
+		.regs_pll = {
+			.regs = ar0822_pll_config_24_960,
+			.num_regs = ARRAY_SIZE(ar0822_pll_config_24_960),
+		},
 		.regs_mipi = {
-			[AR0822_BIT_DEPTH_ID_10BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_960_10bit),
-			[AR0822_BIT_DEPTH_ID_12BIT] = AR0822_REG_SEQ(ar0822_mipi_timing_24_960_12bit),
+			[AR0822_BIT_DEPTH_ID_10BIT] = {
+				.regs = ar0822_mipi_timing_24_960_10bit,
+				.num_regs = ARRAY_SIZE(ar0822_mipi_timing_24_960_10bit),
+			},
+			[AR0822_BIT_DEPTH_ID_12BIT] = {
+				.regs = ar0822_mipi_timing_24_960_12bit,
+				.num_regs = ARRAY_SIZE(ar0822_mipi_timing_24_960_12bit),
+			},
 		},
 	},
 };
@@ -1122,7 +1145,7 @@ ar0822_reg_seq_write(struct regmap *regmap,
 		     struct ar0822_reg_sequence const *reg_sequence)
 {
 	return cci_multi_reg_write(regmap, reg_sequence->regs,
-				   reg_sequence->amount, NULL);
+				   reg_sequence->num_regs, NULL);
 }
 
 static int ar0822_config_pll(struct ar0822 *sensor)
