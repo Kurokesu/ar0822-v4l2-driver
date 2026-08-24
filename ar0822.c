@@ -909,33 +909,30 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
-		dev_dbg(sensor->dev,
-			"ar0822_set_ctrl: AR0822_REG_FRAME_LENGTH_LINES %d\n",
-			sensor->mode.format->height + ctrl->val);
+		dev_dbg(sensor->dev, "%s: AR0822_REG_FRAME_LENGTH_LINES %d\n",
+			__func__, sensor->mode.format->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
 				sensor->mode.format->height + ctrl->val, NULL);
 		break;
 	case V4L2_CID_EXPOSURE:
 		dev_dbg(sensor->dev,
-			"ar0822_set_ctrl: AR0822_REG_COARSE_INTEGRATION_TIME %d\n",
+			"%s: AR0822_REG_COARSE_INTEGRATION_TIME %d\n", __func__,
 			ctrl->val);
 		ret = cci_write(sensor->regmap,
 				AR0822_REG_COARSE_INTEGRATION_TIME, ctrl->val,
 				NULL);
 		break;
 	case V4L2_CID_ANALOGUE_GAIN:
-		dev_dbg(sensor->dev,
-			"ar0822_set_ctrl: AR0822_REG_SENSOR_GAIN %d\n",
-			ctrl->val);
+		dev_dbg(sensor->dev, "%s: AR0822_REG_SENSOR_GAIN %d\n",
+			__func__, ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_SENSOR_GAIN,
 				ctrl->val, NULL);
 		break;
 	case V4L2_CID_HFLIP:
 	case V4L2_CID_VFLIP:
 
-		dev_dbg(sensor->dev,
-			"ar0822_set_ctrl: AR0822_REG_IMAGE_ORIENTATION %d\n",
-			sensor->hflip->val | sensor->vflip->val << 1);
+		dev_dbg(sensor->dev, "%s: AR0822_REG_IMAGE_ORIENTATION %d\n",
+			__func__, sensor->hflip->val | sensor->vflip->val << 1);
 		ret = cci_write(sensor->regmap, AR0822_REG_IMAGE_ORIENTATION,
 				sensor->hflip->val | sensor->vflip->val << 1,
 				NULL);
