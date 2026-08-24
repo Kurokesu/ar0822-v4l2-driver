@@ -2,7 +2,7 @@
 /*
  * Driver for the OnSemi AR0822 CMOS Image Sensor.
  *
- * Copyright (C) 2025 Kurokesu UAB.
+ * Copyright (C) 2025-2026 Kurokesu UAB.
  */
 
 #include <linux/clk.h>
