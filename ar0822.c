@@ -26,11 +26,12 @@
 #define AR0822_REG_ADDRESS_BITS 16
 
 #define AR0822_EMBEDDED_DATA_ENABLED
-#define AR0822_EMBEDDED_LINE_WIDTH 5760 // 3840 + padding bytes (every 3rd byte)
+/* 3840 + padding bytes (every 3rd byte) */
+#define AR0822_EMBEDDED_LINE_WIDTH 5760
 #define AR0822_NUM_EMBEDDED_LINES 4
 
 #define AR0822_VBLANK_STEP 1
-#define AR0822_FLL_MAX 0xFFFF // Maximum frame length lines register value
+#define AR0822_FLL_MAX 0xFFFF /* Maximum frame length lines register value */
 
 #define AR0822_RESET_DELAY_US_MIN 7000
 #define AR0822_RESET_DELAY_US_MAX (AR0822_RESET_DELAY_US_MIN + 1000)
@@ -66,8 +67,8 @@
 #define AR0822_IMAGE_ORIENTATION_HFLIP_BIT 0
 #define AR0822_IMAGE_ORIENTATION_VFLIP_BIT 1
 
-#define AR0822_DATA_FORMAT_RAW_LIN 12 // ADC raw data size in bits (linear)
-#define AR0822_DATA_FORMAT_RAW_HDR 20 // ADC raw data size in bits (HDR)
+#define AR0822_DATA_FORMAT_RAW_LIN 12 /* ADC raw data size in bits (linear) */
+#define AR0822_DATA_FORMAT_RAW_HDR 20 /* ADC raw data size in bits (HDR) */
 
 #define AR0822_TEST_PATTERN_DISABLED 0
 #define AR0822_TEST_PATTERN_SOLID_COLOR 1
@@ -264,7 +265,7 @@ enum pad_types {
 	IMAGE_PAD,
 #ifdef AR0822_EMBEDDED_DATA_ENABLED
 	METADATA_PAD,
-#endif // AR0822_EMBEDDED_DATA_ENABLED
+#endif /* AR0822_EMBEDDED_DATA_ENABLED */
 	NUM_PADS,
 };
 
@@ -337,7 +338,7 @@ static const struct cci_reg_sequence ar0822_1080p_config[] = {
 	{ AR0822_REG_Y_ODD_INC, 0x0003 },
 	{ AR0822_REG_X_OUTPUT_CONTROL, 1920 },
 	{ AR0822_REG_Y_OUTPUT_CONTROL, 1080 },
-	{ AR0822_REG_READ_MODE, 0x3004 }, // binning & 4 embedded data rows
+	{ AR0822_REG_READ_MODE, 0x3004 }, /* binning & 4 embedded data rows */
 };
 
 static const struct cci_reg_sequence ar0822_4k_config[] = {
@@ -345,11 +346,11 @@ static const struct cci_reg_sequence ar0822_4k_config[] = {
 	{ AR0822_REG_X_ADDR_END, 3847 },
 	{ AR0822_REG_Y_ADDR_START, 8 },
 	{ AR0822_REG_Y_ADDR_END, 2167 },
-	{ AR0822_REG_X_ODD_INC, 0x0001 }, // default no skip
-	{ AR0822_REG_Y_ODD_INC, 0x0001 }, // default no skip
+	{ AR0822_REG_X_ODD_INC, 0x0001 }, /* default no skip */
+	{ AR0822_REG_Y_ODD_INC, 0x0001 }, /* default no skip */
 	{ AR0822_REG_X_OUTPUT_CONTROL, 3840 },
 	{ AR0822_REG_Y_OUTPUT_CONTROL, 2160 },
-	{ AR0822_REG_READ_MODE, 0x0004 }, // 4 embedded data rows
+	{ AR0822_REG_READ_MODE, 0x0004 }, /* 4 embedded data rows */
 };
 
 static const struct ar0822_format ar0822_formats_24_480[] = {
@@ -468,13 +469,13 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 			},
 		},
 		.timing_hdr = {
-			[AR0822_LANE_MODE_ID_2] = { //todo
+			[AR0822_LANE_MODE_ID_2] = { /* todo */
 				.line_length_pck_min = 2376,
 				.frame_length_lines_min = 2296,
 			},
 			[AR0822_LANE_MODE_ID_4] = {
-				.line_length_pck_min = 792, //todo
-				.frame_length_lines_min = 3360, //todo
+				.line_length_pck_min = 792, /* todo */
+				.frame_length_lines_min = 3360, /* todo */
 			},
 		},
 		.reg_sequence = {
@@ -510,11 +511,11 @@ static const struct ar0822_format ar0822_formats_24_960[] = {
 			},
 		},
 		.timing_hdr = {
-			[AR0822_LANE_MODE_ID_2] = { // todo
+			[AR0822_LANE_MODE_ID_2] = { /* todo */
 				.line_length_pck_min = 2376,
 				.frame_length_lines_min = 2296,
 			},
-			[AR0822_LANE_MODE_ID_4] = { // todo
+			[AR0822_LANE_MODE_ID_4] = { /* todo */
 				.line_length_pck_min = 2372,
 				.frame_length_lines_min = 2248,
 			},
@@ -653,14 +654,16 @@ static const struct cci_reg_sequence ar0822_regs_common[] = {
 	{ AR0822_REG_PIX_DEF_ID, 0x0001 },
 	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 },
 #ifdef AR0822_EMBEDDED_DATA_ENABLED
-	{ AR0822_REG_SMIA_TEST, 0x0100 }, // Enable embedded data
-#endif // AR0822_EMBEDDED_DATA_ENABLED
+	/* Enable embedded data */
+	{ AR0822_REG_SMIA_TEST, 0x0100 },
+#endif /* AR0822_EMBEDDED_DATA_ENABLED */
 	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0001 },
-	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 }, // Enable temperature sensor
+	/* Enable temperature sensor */
+	{ AR0822_REG_TEMPSENS1_CTRL_REG, 0x0011 },
 	{ AR0822_REG_DIGITAL_CTRL, 0x0024 },
 };
 
-// clang-format off
+/* clang-format off */
 static const struct cci_reg_sequence ar0822_regs_mfr_common[] = {
 	{ CCI_REG16(0x50A2), 0x2553 },
 	{ CCI_REG16(0x50A4), 0xDFD4 },
@@ -686,8 +689,8 @@ static const struct cci_reg_sequence ar0822_regs_mfr_common[] = {
 };
 
 static const struct cci_reg_sequence ar0822_regs_mfr_hdr[] = {
-	{ CCI_REG16(0x50A2), 0x3F2A }, // override common
-	{ CCI_REG16(0x50A4), 0x875A }, // override common
+	{ CCI_REG16(0x50A2), 0x3F2A }, /* override common */
+	{ CCI_REG16(0x50A4), 0x875A }, /* override common */
 	{ CCI_REG16(0x50A6), 0x030F },
 	{ CCI_REG16(0x50A6), 0x0F0F },
 	{ CCI_REG16(0x50A8), 0x030F },
@@ -753,7 +756,7 @@ static const struct cci_reg_sequence ar0822_regs_mfr_hdr[] = {
 	{ CCI_REG16(0x3D78), 0x0ED8 },
 	{ CCI_REG16(0x3D7A), 0x0ED8 },
 };
-// clang-format on
+/* clang-format on */
 
 static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 	{ AR0822_REG_OC_LUT_00, 0x2000 },
@@ -784,18 +787,18 @@ static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 	{ AR0822_REG_T4_NOISE_FLOOR1, 0x0002 },
 	{ AR0822_REG_T4_NOISE_FLOOR2, 0x0003 },
 	{ AR0822_REG_T4_NOISE_FLOOR3, 0x0004 },
-	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 }, // override common
+	{ AR0822_REG_T1_PIX_DEF_ID, 0x11C1 }, /* override common */
 	{ AR0822_REG_T2_PIX_DEF_ID, 0x0180 },
 	{ AR0822_REG_T4_PIX_DEF_ID, 0x0180 },
 	{ AR0822_REG_HDR_CONTROL0, 0x0011 },
 	{ AR0822_REG_DIGITAL_TEST, 0x0820 },
-	{ AR0822_REG_HDR_CONTROL3, 0x2001 }, // default
+	{ AR0822_REG_HDR_CONTROL3, 0x2001 }, /* default */
 	{ AR0822_REG_T3_STR_END_DEC_TH_MSB, 0x0F0F },
 	{ AR0822_REG_COMPANDING, 0x0001 },
-	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0008 }, // override common
-	{ AR0822_REG_DIGITAL_CTRL, 0x013E }, // override common
-	{ AR0822_REG_EXPOSURE_RATIO, 0x0044 }, // 16x
-	{ AR0822_REG_SENSOR_GAIN_TABLE_SEL, 0x4006 }, //select gain table 1
+	{ AR0822_REG_OPERATION_MODE_CTRL, 0x0008 }, /* override common */
+	{ AR0822_REG_DIGITAL_CTRL, 0x013E }, /* override common */
+	{ AR0822_REG_EXPOSURE_RATIO, 0x0044 }, /* 16x */
+	{ AR0822_REG_SENSOR_GAIN_TABLE_SEL, 0x4006 }, /* select gain table 1 */
 };
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
@@ -810,13 +813,13 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 		sensor->mode.format->height + sensor->vblank->val;
 
 	if (sensor->mode.hdr) {
-		/* 
+		/*
 		 * Limit exposure range ensuring fixed FPS based on frame length lines.
 		 * Calculate sensor internal vblank (not v4l2) based on output rows.
 		 * With 4 embedded data rows enabled, output rows amount
 		 * is 2174 @ 4k and 1092 @ 1080p.
-		 * Following HDR exposure limit calculations assume that T1/T2 and 
-		 * T2/T3 ratios are at their default 16x settings. 
+		 * Following HDR exposure limit calculations assume that T1/T2 and
+		 * T2/T3 ratios are at their default 16x settings.
 		 */
 		u16 rows = (sensor->mode.format->height == 2160) ? 2174 : 1092;
 		u32 vblank = frame_length_lines - rows;
@@ -1071,8 +1074,6 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 				  AR0822_TEST_PATTERN_COLOR_MAX);
 		/* The "Solid color" pattern is white by default */
 	}
-
-	// v4l2_ctrl_new_custom(ctrl_hdlr, &ar0822_notify_gains_ctrl, NULL);
 
 	sensor->hdr_mode =
 		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
@@ -1685,7 +1686,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
 #ifdef AR0822_EMBEDDED_DATA_ENABLED
 	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
-#endif // AR0822_EMBEDDED_DATA_ENABLED
+#endif /* AR0822_EMBEDDED_DATA_ENABLED */
 	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
 				     sensor->pad);
 	if (ret < 0) {
@@ -1794,7 +1795,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 
 	dev_dbg(sensor->dev, "parsing hardware configuration\n");
 
-	// Get the regulators
+	/* Get the regulators */
 	for (i = 0; i < AR0822_NUM_SUPPLIES; i++)
 		hw_config->supplies[i].supply = ar0822_supply_names[i];
 
@@ -1804,7 +1805,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		return dev_err_probe(sensor->dev, ret,
 				     "failed to get supplies\n");
 
-	// Get the reset GPIO
+	/* Get the reset GPIO */
 	hw_config->gpio_reset =
 		devm_gpiod_get_optional(sensor->dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(hw_config->gpio_reset))
@@ -1812,7 +1813,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 				     PTR_ERR(hw_config->gpio_reset),
 				     "failed to get reset GPIO\n");
 
-	// Get EXTCLK
+	/* Get EXTCLK */
 	hw_config->extclk = devm_clk_get(sensor->dev, "extclk");
 	if (IS_ERR(hw_config->extclk))
 		return dev_err_probe(sensor->dev, PTR_ERR(hw_config->extclk),
