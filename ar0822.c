@@ -76,7 +76,7 @@
 #define AR0822_TEST_PATTERN_PN9 4
 #define AR0822_TEST_PATTERN_WALKING_1S 256
 
-#define AR0822_TEST_SOLID_COLOR_CTRL_AMOUNT 4
+#define AR0822_NUM_TEST_SOLID_COLOR_CTRLS 4
 #define AR0822_TEST_PATTERN_COLOR_MIN 0
 #define AR0822_TEST_PATTERN_COLOR_MAX 0xFFF
 #define AR0822_TEST_PATTERN_COLOR_STEP 1
@@ -198,13 +198,13 @@ struct ar0822_timing {
 enum ar0822_lane_mode_id {
 	AR0822_LANE_MODE_ID_2 = 0,
 	AR0822_LANE_MODE_ID_4,
-	AR0822_LANE_MODE_ID_AMOUNT,
+	AR0822_NUM_LANE_MODES,
 };
 
 enum ar0822_bit_depth_id {
 	AR0822_BIT_DEPTH_ID_10BIT = 0,
 	AR0822_BIT_DEPTH_ID_12BIT,
-	AR0822_BIT_DEPTH_ID_AMOUNT,
+	AR0822_NUM_BIT_DEPTHS,
 };
 
 struct ar0822_reg_sequence {
@@ -217,11 +217,11 @@ struct ar0822_format {
 	unsigned int height;
 	struct v4l2_rect crop;
 
-	struct ar0822_timing timing_no_hdr[AR0822_LANE_MODE_ID_AMOUNT]
-					  [AR0822_BIT_DEPTH_ID_AMOUNT];
+	struct ar0822_timing timing_no_hdr[AR0822_NUM_LANE_MODES]
+					  [AR0822_NUM_BIT_DEPTHS];
 
 	/* Only 12bit companded HDR mode currently supported. */
-	struct ar0822_timing timing_hdr[AR0822_LANE_MODE_ID_AMOUNT];
+	struct ar0822_timing timing_hdr[AR0822_NUM_LANE_MODES];
 
 	struct ar0822_reg_sequence reg_sequence;
 };
@@ -231,11 +231,11 @@ struct ar0822_pll_config {
 	u64 const *freq_extclk;
 	unsigned long pixel_rate;
 
-	unsigned int formats_amount;
+	unsigned int num_formats;
 	struct ar0822_format const *formats;
 
 	struct ar0822_reg_sequence regs_pll;
-	struct ar0822_reg_sequence regs_mipi[AR0822_BIT_DEPTH_ID_AMOUNT];
+	struct ar0822_reg_sequence regs_mipi[AR0822_NUM_BIT_DEPTHS];
 };
 
 static const char *const ar0822_supply_names[] = {
@@ -244,11 +244,11 @@ static const char *const ar0822_supply_names[] = {
 	"vddl", /* IF (1.2V) supply */
 };
 
-#define AR0822_SUPPLY_AMOUNT ARRAY_SIZE(ar0822_supply_names)
+#define AR0822_NUM_SUPPLIES ARRAY_SIZE(ar0822_supply_names)
 
 struct ar0822_hw_config {
 	struct clk *extclk;
-	struct regulator_bulk_data supplies[AR0822_SUPPLY_AMOUNT];
+	struct regulator_bulk_data supplies[AR0822_NUM_SUPPLIES];
 	struct gpio_desc *gpio_reset;
 	unsigned int num_data_lanes;
 	enum ar0822_lane_mode_id lane_mode;
@@ -307,7 +307,7 @@ static const s64 ar0822_link_frequencies[] = {
 	[AR0822_EXTCLK_LINK_ID_24_960] = 960000000,
 };
 
-static const u32 ar0822_format_codes[AR0822_BIT_DEPTH_ID_AMOUNT] = {
+static const u32 ar0822_format_codes[AR0822_NUM_BIT_DEPTHS] = {
 	[AR0822_BIT_DEPTH_ID_10BIT] = MEDIA_BUS_FMT_SGRBG10_1X10,
 	[AR0822_BIT_DEPTH_ID_12BIT] = MEDIA_BUS_FMT_SGRBG12_1X12,
 };
@@ -582,7 +582,7 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_480],
 		.pixel_rate = AR0822_PIXEL_RATE,
 		.formats = ar0822_formats_24_480,
-		.formats_amount = ARRAY_SIZE(ar0822_formats_24_480),
+		.num_formats = ARRAY_SIZE(ar0822_formats_24_480),
 		.regs_pll = {
 			.regs = ar0822_pll_config_24_480,
 			.num_regs = ARRAY_SIZE(ar0822_pll_config_24_480),
@@ -605,7 +605,7 @@ static const struct ar0822_pll_config ar0822_pll_configs[] = {
 			&ar0822_extclk_frequencies[AR0822_EXTCLK_LINK_ID_24_960],
 		.pixel_rate = AR0822_PIXEL_RATE,
 		.formats = ar0822_formats_24_960,
-		.formats_amount = ARRAY_SIZE(ar0822_formats_24_960),
+		.num_formats = ARRAY_SIZE(ar0822_formats_24_960),
 		.regs_pll = {
 			.regs = ar0822_pll_config_24_960,
 			.num_regs = ARRAY_SIZE(ar0822_pll_config_24_960),
@@ -1056,7 +1056,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 				     0, 0, ar0822_test_pattern_menu);
 
-	for (u8 i = 0; i < AR0822_TEST_SOLID_COLOR_CTRL_AMOUNT; i++) {
+	for (u8 i = 0; i < AR0822_NUM_TEST_SOLID_COLOR_CTRLS; i++) {
 		/*
 		 * The assumption is that
 		 * V4L2_CID_TEST_PATTERN_GREENR == V4L2_CID_TEST_PATTERN_RED + 1
@@ -1371,11 +1371,11 @@ static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
 {
 	u8 i;
 
-	for (i = 0; i < AR0822_BIT_DEPTH_ID_AMOUNT; i++)
+	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
 		if (ar0822_format_codes[i] == code)
 			break;
 
-	if (i >= AR0822_BIT_DEPTH_ID_AMOUNT)
+	if (i >= AR0822_NUM_BIT_DEPTHS)
 		i = 0;
 
 	return ar0822_format_codes[i];
@@ -1389,11 +1389,11 @@ static int ar0822_get_bit_depth_id(u32 code,
 	if (!bit_depth_id)
 		return -EINVAL;
 
-	for (i = 0; i < AR0822_BIT_DEPTH_ID_AMOUNT; i++)
+	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
 		if (ar0822_format_codes[i] == code)
 			break;
 
-	if (i >= AR0822_BIT_DEPTH_ID_AMOUNT)
+	if (i >= AR0822_NUM_BIT_DEPTHS)
 		return -ENOENT;
 
 	*bit_depth_id = i;
@@ -1418,7 +1418,7 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 			code->code =
 				ar0822_format_codes[AR0822_BIT_DEPTH_ID_12BIT];
 		} else {
-			if (code->index >= AR0822_BIT_DEPTH_ID_AMOUNT)
+			if (code->index >= AR0822_NUM_BIT_DEPTHS)
 				return -EINVAL;
 
 			code->code = ar0822_format_codes[code->index];
@@ -1443,7 +1443,7 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	if (fse->pad == IMAGE_PAD) {
-		if (fse->index >= sensor->pll_config->formats_amount)
+		if (fse->index >= sensor->pll_config->num_formats)
 			return -EINVAL;
 
 		if (fse->code != ar0822_get_format_code(sensor, fse->code))
@@ -1555,10 +1555,11 @@ static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 		fmt->format.code =
 			ar0822_get_format_code(sensor, fmt->format.code);
 
-		format = v4l2_find_nearest_size(
-			sensor->pll_config->formats,
-			sensor->pll_config->formats_amount, width, height,
-			fmt->format.width, fmt->format.height);
+		format = v4l2_find_nearest_size(sensor->pll_config->formats,
+						sensor->pll_config->num_formats,
+						width, height,
+						fmt->format.width,
+						fmt->format.height);
 
 		ar0822_update_image_pad_format(sensor, format, fmt);
 		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
@@ -1717,7 +1718,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 
 	dev_dbg(sensor->dev, "%s\n", __func__);
 
-	ret = regulator_bulk_enable(AR0822_SUPPLY_AMOUNT, hw_config->supplies);
+	ret = regulator_bulk_enable(AR0822_NUM_SUPPLIES, hw_config->supplies);
 	if (ret < 0)
 		return ret;
 
@@ -1733,7 +1734,7 @@ static int ar0822_power_on(struct ar0822 *sensor)
 
 err_reset:
 	gpiod_set_value_cansleep(hw_config->gpio_reset, 0);
-	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT, hw_config->supplies);
+	regulator_bulk_disable(AR0822_NUM_SUPPLIES, hw_config->supplies);
 	return ret;
 }
 
@@ -1742,8 +1743,7 @@ static void ar0822_power_off(struct ar0822 *sensor)
 	dev_dbg(sensor->dev, "%s\n", __func__);
 	clk_disable_unprepare(sensor->hw_config.extclk);
 	gpiod_set_value_cansleep(sensor->hw_config.gpio_reset, 0);
-	regulator_bulk_disable(AR0822_SUPPLY_AMOUNT,
-			       sensor->hw_config.supplies);
+	regulator_bulk_disable(AR0822_NUM_SUPPLIES, sensor->hw_config.supplies);
 }
 
 static int ar0822_identify_model(struct ar0822 *sensor)
@@ -1795,10 +1795,10 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	dev_dbg(sensor->dev, "parsing hardware configuration\n");
 
 	// Get the regulators
-	for (i = 0; i < AR0822_SUPPLY_AMOUNT; i++)
+	for (i = 0; i < AR0822_NUM_SUPPLIES; i++)
 		hw_config->supplies[i].supply = ar0822_supply_names[i];
 
-	ret = devm_regulator_bulk_get(sensor->dev, AR0822_SUPPLY_AMOUNT,
+	ret = devm_regulator_bulk_get(sensor->dev, AR0822_NUM_SUPPLIES,
 				      hw_config->supplies);
 	if (ret)
 		return dev_err_probe(sensor->dev, ret,
