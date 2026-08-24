@@ -982,24 +982,25 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static int ar0822_ctrls_init(struct ar0822 *sensor)
 {
-	struct v4l2_fwnode_device_properties props;
-	struct v4l2_ctrl *ctrl;
+	struct v4l2_ctrl_handler *ctrl_hdlr = &sensor->ctrl_hdlr;
 	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
-	u8 link_freq_id =
-		sensor->pll_config->freq_link - ar0822_link_frequencies;
+	struct v4l2_fwnode_device_properties props;
+	struct v4l2_ctrl *ctrl;
+	u8 link_freq_id;
 	u32 exposure_max;
 	int ret;
 
-	ret = v4l2_ctrl_handler_init(&sensor->ctrl_hdlr, 16);
+	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
 	if (ret)
 		return ret;
 
 	mutex_init(&sensor->mutex);
-	sensor->ctrl_hdlr.lock = &sensor->mutex;
+	ctrl_hdlr->lock = &sensor->mutex;
 
 	/* Link frequency (read only) */
-	ctrl = v4l2_ctrl_new_int_menu(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	link_freq_id = sensor->pll_config->freq_link - ar0822_link_frequencies;
+	ctrl = v4l2_ctrl_new_int_menu(ctrl_hdlr, &ar0822_ctrl_ops,
 				      V4L2_CID_LINK_FREQ,
 				      ARRAY_SIZE(ar0822_link_frequencies) - 1,
 				      link_freq_id, ar0822_link_frequencies);
@@ -1007,7 +1008,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Pixel rate (read only) */
-	ctrl = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
+	ctrl = v4l2_ctrl_new_std(ctrl_hdlr, NULL, V4L2_CID_PIXEL_RATE,
 				 sensor->pll_config->pixel_rate,
 				 sensor->pll_config->pixel_rate, 1,
 				 sensor->pll_config->pixel_rate);
@@ -1020,39 +1021,39 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	 */
 
 	/* Horizontal blanking (read only) */
-	sensor->hblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	sensor->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
 					   V4L2_CID_HBLANK, 0, 0xFFFF, 1, 0);
 	if (sensor->hblank)
 		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Vertical blanking control */
-	sensor->vblank = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	sensor->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
 					   V4L2_CID_VBLANK, 0, 0xFFFF,
 					   AR0822_VBLANK_STEP, 0);
 
 	/* Exposure */
 	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MARGIN;
-	sensor->exposure = v4l2_ctrl_new_std(
-		&sensor->ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_EXPOSURE,
-		AR0822_EXPOSURE_MIN, exposure_max, AR0822_EXPOSURE_STEP,
-		exposure_max);
+	sensor->exposure = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
+					     V4L2_CID_EXPOSURE,
+					     AR0822_EXPOSURE_MIN, exposure_max,
+					     AR0822_EXPOSURE_STEP,
+					     exposure_max);
 
 	/* Analogue gain */
-	v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-			  V4L2_CID_ANALOGUE_GAIN, AR0822_ANA_GAIN_MIN,
-			  AR0822_ANA_GAIN_MAX, AR0822_ANA_GAIN_STEP,
-			  AR0822_ANA_GAIN_MIN);
+	v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops, V4L2_CID_ANALOGUE_GAIN,
+			  AR0822_ANA_GAIN_MIN, AR0822_ANA_GAIN_MAX,
+			  AR0822_ANA_GAIN_STEP, AR0822_ANA_GAIN_MIN);
 
 	/* Horizontal flip */
-	sensor->hflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	sensor->hflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_HFLIP, 0, 1, 1, 0);
 
 	/* Vertical flip */
-	sensor->vflip = v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	sensor->vflip = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
 					  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
 	/* Test patterns */
-	v4l2_ctrl_new_std_menu_items(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+	v4l2_ctrl_new_std_menu_items(ctrl_hdlr, &ar0822_ctrl_ops,
 				     V4L2_CID_TEST_PATTERN,
 				     ARRAY_SIZE(ar0822_test_pattern_menu) - 1,
 				     0, 0, ar0822_test_pattern_menu);
@@ -1064,7 +1065,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		 * V4L2_CID_TEST_PATTERN_BLUE   == V4L2_CID_TEST_PATTERN_RED + 2
 		 * V4L2_CID_TEST_PATTERN_GREENB == V4L2_CID_TEST_PATTERN_RED + 3
 		 */
-		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
+		v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
 				  V4L2_CID_TEST_PATTERN_RED + i,
 				  AR0822_TEST_PATTERN_COLOR_MIN,
 				  AR0822_TEST_PATTERN_COLOR_MAX,
@@ -1073,12 +1074,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 		/* The "Solid color" pattern is white by default */
 	}
 
-	sensor->hdr_mode =
-		v4l2_ctrl_new_std(&sensor->ctrl_hdlr, &ar0822_ctrl_ops,
-				  V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1, 1, 0);
+	sensor->hdr_mode = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
+					     V4L2_CID_WIDE_DYNAMIC_RANGE, 0, 1,
+					     1, 0);
 
-	if (sensor->ctrl_hdlr.error) {
-		ret = sensor->ctrl_hdlr.error;
+	if (ctrl_hdlr->error) {
+		ret = ctrl_hdlr->error;
 		dev_err(&client->dev, "failed to init controls %d\n", ret);
 		goto error;
 	}
@@ -1087,12 +1088,12 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ret)
 		goto error;
 
-	ret = v4l2_ctrl_new_fwnode_properties(&sensor->ctrl_hdlr,
-					      &ar0822_ctrl_ops, &props);
+	ret = v4l2_ctrl_new_fwnode_properties(ctrl_hdlr, &ar0822_ctrl_ops,
+					      &props);
 	if (ret)
 		goto error;
 
-	sensor->subdev.ctrl_handler = &sensor->ctrl_hdlr;
+	sensor->subdev.ctrl_handler = ctrl_hdlr;
 
 	mutex_lock(&sensor->mutex);
 
@@ -1103,7 +1104,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	return 0;
 
 error:
-	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+	v4l2_ctrl_handler_free(ctrl_hdlr);
 	mutex_destroy(&sensor->mutex);
 	return ret;
 }
@@ -1149,6 +1150,8 @@ ar0822_reg_seq_write(struct regmap *regmap,
 
 static int ar0822_config_pll(struct ar0822 *sensor)
 {
+	const struct ar0822_reg_sequence *regs_mipi =
+		&sensor->pll_config->regs_mipi[sensor->mode.bit_depth];
 	int ret;
 	u8 bit_depth;
 
@@ -1178,9 +1181,7 @@ static int ar0822_config_pll(struct ar0822 *sensor)
 	}
 
 	/* Configure MIPI timing */
-	ret = ar0822_reg_seq_write(
-		sensor->regmap,
-		&sensor->pll_config->regs_mipi[sensor->mode.bit_depth]);
+	ret = ar0822_reg_seq_write(sensor->regmap, regs_mipi);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Failed to write MIPI timing config: %d\n",
 			ret);
@@ -1522,15 +1523,13 @@ static int ar0822_get_pad_format(struct v4l2_subdev *sd,
 				ar0822_get_format_code(sensor, try_fmt->code) :
 				MEDIA_BUS_FMT_SENSOR_DATA;
 		fmt->format = *try_fmt;
+	} else if (fmt->pad == IMAGE_PAD) {
+		ar0822_update_image_pad_format(sensor, sensor->mode.format,
+					       fmt);
+		fmt->format.code =
+			ar0822_get_format_code(sensor, sensor->fmt_code);
 	} else {
-		if (fmt->pad == IMAGE_PAD) {
-			ar0822_update_image_pad_format(
-				sensor, sensor->mode.format, fmt);
-			fmt->format.code = ar0822_get_format_code(
-				sensor, sensor->fmt_code);
-		} else {
-			ar0822_update_metadata_pad_format(fmt);
-		}
+		ar0822_update_metadata_pad_format(fmt);
 	}
 
 	mutex_unlock(&sensor->mutex);
@@ -1777,7 +1776,7 @@ static int ar0822_identify_model(struct ar0822 *sensor)
 
 static int ar0822_parse_hw_config(struct ar0822 *sensor)
 {
-	struct v4l2_fwnode_endpoint endpoint_config = {
+	struct v4l2_fwnode_endpoint ep_cfg = {
 		.bus_type = V4L2_MBUS_CSI2_DPHY,
 	};
 	struct fwnode_handle *endpoint;
@@ -1819,14 +1818,14 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		return -ENXIO;
 	}
 
-	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &endpoint_config);
+	ret = v4l2_fwnode_endpoint_alloc_parse(endpoint, &ep_cfg);
 	fwnode_handle_put(endpoint);
 	if (ret) {
 		dev_err(sensor->dev, "failed to parse endpoint\n");
 		return ret;
 	}
 
-	switch (endpoint_config.bus.mipi_csi2.num_data_lanes) {
+	switch (ep_cfg.bus.mipi_csi2.num_data_lanes) {
 	case 2:
 		hw_config->lane_mode = AR0822_LANE_MODE_ID_2;
 		break;
@@ -1834,17 +1833,15 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		hw_config->lane_mode = AR0822_LANE_MODE_ID_4;
 		break;
 	default:
-		ret = dev_err_probe(
-			sensor->dev, -EINVAL,
-			"invalid number of CSI2 data lanes %d\n",
-			endpoint_config.bus.mipi_csi2.num_data_lanes);
+		ret = dev_err_probe(sensor->dev, -EINVAL,
+				    "invalid number of CSI2 data lanes %d\n",
+				    ep_cfg.bus.mipi_csi2.num_data_lanes);
 		goto done_endpoint_free;
 	}
 
-	hw_config->num_data_lanes =
-		endpoint_config.bus.mipi_csi2.num_data_lanes;
+	hw_config->num_data_lanes = ep_cfg.bus.mipi_csi2.num_data_lanes;
 
-	if (!endpoint_config.nr_of_link_frequencies) {
+	if (!ep_cfg.nr_of_link_frequencies) {
 		ret = dev_err_probe(sensor->dev, -EINVAL,
 				    "no link frequencies defined");
 		goto done_endpoint_free;
@@ -1859,15 +1856,15 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 	for (i = 0; i < ARRAY_SIZE(ar0822_pll_configs); i++) {
 		if ((*ar0822_pll_configs[i].freq_extclk == extclk_frequency) &&
 		    (*ar0822_pll_configs[i].freq_link ==
-		     endpoint_config.link_frequencies[0]))
+		     ep_cfg.link_frequencies[0]))
 			break;
 	}
 
 	if (i == ARRAY_SIZE(ar0822_pll_configs)) {
-		ret = dev_err_probe(
-			sensor->dev, -EINVAL,
-			"no valid sensor mode defined for EXTCLK %luHz and link frequency %lluHz\n",
-			extclk_frequency, endpoint_config.link_frequencies[0]);
+		ret = dev_err_probe(sensor->dev, -EINVAL,
+				    "no PLL config for %lu/%llu Hz\n",
+				    extclk_frequency,
+				    ep_cfg.link_frequencies[0]);
 		goto done_endpoint_free;
 	}
 
@@ -1880,7 +1877,7 @@ static int ar0822_parse_hw_config(struct ar0822 *sensor)
 		hw_config->num_data_lanes);
 
 done_endpoint_free:
-	v4l2_fwnode_endpoint_free(&endpoint_config);
+	v4l2_fwnode_endpoint_free(&ep_cfg);
 
 	return ret;
 }
