@@ -876,7 +876,6 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 
 	hblank = timing->line_length_pck_min - format->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
-	__v4l2_ctrl_s_ctrl(sensor->hblank, hblank);
 }
 
 static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
