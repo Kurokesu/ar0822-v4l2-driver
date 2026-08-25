@@ -962,6 +962,9 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = cci_write(sensor->regmap, AR0822_REG_TEST_DATA_GREENB,
 				ctrl->val, NULL);
 		break;
+	case V4L2_CID_HBLANK:
+		/* Read only, line length is set with mode registers. */
+		break;
 	case V4L2_CID_WIDE_DYNAMIC_RANGE:
 		/* Already handled above. */
 		break;
