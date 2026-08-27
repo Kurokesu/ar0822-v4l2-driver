@@ -1,3 +1,14 @@
+ar0822-rpi-dkms (0.1.1-1) unstable; urgency=medium
+
+  * Report V4L2_COLORSPACE_RAW rather than sRGB. Sensor emits
+    unprocessed Bayer, so derived fields follow and xfer_func becomes
+    NONE.
+  * Handle read-only HBLANK control. Line length ships with mode
+    registers, so there is nothing to program. Probe and every mode
+    change no longer log an unhandled control.
+
+ -- Danius Kalvaitis <danius@kurokesu.com>  Thu, 27 Aug 2026 19:35:02 +0300
+
 ar0822-rpi-dkms (0.1.0-1) unstable; urgency=medium
 
   * Initial release as a DKMS source package.
