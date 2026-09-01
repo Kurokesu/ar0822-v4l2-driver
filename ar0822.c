@@ -916,6 +916,7 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor,
 	/* Setting this will adjust the exposure limits as well */
 	__v4l2_ctrl_s_ctrl(sensor->vblank, vblank_min);
 
+	/* Virtual, negative, keeps width + hblank at true line length */
 	hblank = timing->line_length_pck_min - mode->width;
 	__v4l2_ctrl_modify_range(sensor->hblank, hblank, hblank, 1, hblank);
 }
