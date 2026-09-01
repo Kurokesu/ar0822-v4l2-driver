@@ -61,6 +61,8 @@
 #define AR0822_MODEL_ID 0x0F56
 #define AR0822_REVISION_MIN 0x2303
 
+#define AR0822_RESET_SOFT_RESET BIT(0)
+
 #define AR0822_MODE_SELECT_STREAM_OFF 0x00
 #define AR0822_MODE_SELECT_STREAM_ON BIT(0)
 
@@ -1315,6 +1317,18 @@ static int ar0822_enable_streams(struct v4l2_subdev *sd,
 	ret = pm_runtime_resume_and_get(&client->dev);
 	if (ret < 0)
 		return ret;
+
+	/* Soft reset */
+	ret = cci_write(sensor->regmap, AR0822_REG_MODE_SELECT,
+			AR0822_MODE_SELECT_STREAM_OFF, NULL);
+	ret = cci_write(sensor->regmap, AR0822_REG_RESET,
+			AR0822_RESET_SOFT_RESET, &ret);
+	if (ret < 0) {
+		dev_err(sensor->dev, "Failed to soft reset: %d\n", ret);
+		goto err_rpm_put;
+	}
+
+	usleep_range(AR0822_RESET_DELAY_US_MIN, AR0822_RESET_DELAY_US_MAX);
 
 	/* Configure PLL and MIPI timings */
 	ret = ar0822_config_pll(sensor, bit_depth_id);
