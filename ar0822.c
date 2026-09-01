@@ -800,6 +800,10 @@ static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
 {
 	u8 i;
 
+	/* HDR streams 12-bit only */
+	if (sensor->hdr_mode->val)
+		return ar0822_format_codes[AR0822_BIT_DEPTH_ID_12BIT];
+
 	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
 		if (ar0822_format_codes[i] == code)
 			break;
@@ -940,14 +944,14 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 		if (ctrl->val != ctrl->cur.val) {
 			dev_dbg(sensor->dev, "hdr %d\n", ctrl->val);
 
-			/* HDR streams 12-bit only, refresh a stale 10-bit code */
+			/* Refresh a stale 10-bit active code */
 			if (ctrl->val) {
 				struct v4l2_mbus_framefmt *fmt =
 					v4l2_subdev_state_get_format(state,
 								     IMAGE_PAD);
 
-				fmt->code = ar0822_format_codes
-					[AR0822_BIT_DEPTH_ID_12BIT];
+				fmt->code = ar0822_get_format_code(sensor,
+								   fmt->code);
 				bit_depth_id = AR0822_BIT_DEPTH_ID_12BIT;
 			}
 
