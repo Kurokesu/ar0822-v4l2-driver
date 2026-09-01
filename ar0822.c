@@ -276,10 +276,10 @@ struct ar0822 {
 
 	struct regmap *regmap;
 
-	struct v4l2_subdev subdev;
+	struct v4l2_subdev sd;
 	struct media_pad pad[NUM_PADS];
 
-	struct v4l2_ctrl_handler ctrl_hdlr;
+	struct v4l2_ctrl_handler ctrl_handler;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *hflip;
@@ -805,7 +805,7 @@ static const struct cci_reg_sequence ar0822_regs_hdr[] = {
 
 static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 {
-	return container_of(sd, struct ar0822, subdev);
+	return container_of(sd, struct ar0822, sd);
 }
 
 static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
@@ -881,8 +881,8 @@ static void ar0822_set_framing_limits(struct ar0822 *sensor)
 static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct ar0822 *sensor =
-		container_of(ctrl->handler, struct ar0822, ctrl_hdlr);
-	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+		container_of(ctrl->handler, struct ar0822, ctrl_handler);
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
 	int ret = 0;
 
 	if (ctrl->id == V4L2_CID_VBLANK) {
@@ -983,11 +983,11 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 	.s_ctrl = ar0822_set_ctrl,
 };
 
-static int ar0822_ctrls_init(struct ar0822 *sensor)
+static int ar0822_init_controls(struct ar0822 *sensor)
 {
-	struct v4l2_ctrl_handler *ctrl_hdlr = &sensor->ctrl_hdlr;
+	struct v4l2_ctrl_handler *ctrl_hdlr = &sensor->ctrl_handler;
 	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
-	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
 	u8 link_freq_id;
@@ -1096,7 +1096,7 @@ static int ar0822_ctrls_init(struct ar0822 *sensor)
 	if (ret)
 		goto error;
 
-	sensor->subdev.ctrl_handler = ctrl_hdlr;
+	sensor->sd.ctrl_handler = ctrl_hdlr;
 
 	mutex_lock(&sensor->mutex);
 
@@ -1240,7 +1240,7 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 
 static int ar0822_start_streaming(struct ar0822 *sensor)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
 	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 	int ret;
 
@@ -1306,7 +1306,7 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 	}
 
 	/* Apply customized values from user */
-	ret = __v4l2_ctrl_handler_setup(sensor->subdev.ctrl_handler);
+	ret = __v4l2_ctrl_handler_setup(sensor->sd.ctrl_handler);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to setup controls: %d\n", ret);
 		return ret;
@@ -1319,7 +1319,7 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 /* Stop streaming */
 static void ar0822_stop_streaming(struct ar0822 *sensor)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(&sensor->subdev);
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
 	int ret;
 
 	ret = ar0822_mode_stream_off(sensor);
@@ -1645,11 +1645,11 @@ static const struct v4l2_subdev_core_ops ar0822_core_ops = {
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
 };
 
-static const struct v4l2_subdev_video_ops ar0822_subdev_video_ops = {
+static const struct v4l2_subdev_video_ops ar0822_video_ops = {
 	.s_stream = ar0822_set_stream,
 };
 
-static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
+static const struct v4l2_subdev_pad_ops ar0822_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
 	.get_fmt = ar0822_get_pad_format,
@@ -1659,13 +1659,13 @@ static const struct v4l2_subdev_pad_ops ar0822_subdev_pad_ops = {
 
 static const struct v4l2_subdev_ops ar0822_subdev_ops = {
 	.core = &ar0822_core_ops,
-	.video = &ar0822_subdev_video_ops,
-	.pad = &ar0822_subdev_pad_ops,
+	.video = &ar0822_video_ops,
+	.pad = &ar0822_pad_ops,
 };
 
 static void ar0822_free_controls(struct ar0822 *sensor)
 {
-	v4l2_ctrl_handler_free(&sensor->ctrl_hdlr);
+	v4l2_ctrl_handler_free(&sensor->ctrl_handler);
 	mutex_destroy(&sensor->mutex);
 }
 
@@ -1673,26 +1673,25 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 {
 	int ret;
 
-	ret = ar0822_ctrls_init(sensor);
+	ret = ar0822_init_controls(sensor);
 	if (ret)
 		return ret;
 
-	sensor->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
-				V4L2_SUBDEV_FL_HAS_EVENTS;
-	sensor->subdev.entity.function = MEDIA_ENT_F_CAM_SENSOR;
+	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
+			    V4L2_SUBDEV_FL_HAS_EVENTS;
+	sensor->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 
 	sensor->pad[IMAGE_PAD].flags = MEDIA_PAD_FL_SOURCE;
 #ifdef AR0822_EMBEDDED_DATA_ENABLED
 	sensor->pad[METADATA_PAD].flags = MEDIA_PAD_FL_SOURCE;
 #endif /* AR0822_EMBEDDED_DATA_ENABLED */
-	ret = media_entity_pads_init(&sensor->subdev.entity, NUM_PADS,
-				     sensor->pad);
+	ret = media_entity_pads_init(&sensor->sd.entity, NUM_PADS, sensor->pad);
 	if (ret < 0) {
 		dev_err(sensor->dev, "failed to init entity pads: %d\n", ret);
 		goto error_handler_free;
 	}
 
-	ret = v4l2_async_register_subdev_sensor(&sensor->subdev);
+	ret = v4l2_async_register_subdev_sensor(&sensor->sd);
 	if (ret < 0) {
 		dev_err(sensor->dev,
 			"failed to register sensor sub-device: %d\n", ret);
@@ -1702,7 +1701,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	return 0;
 
 error_media_entity:
-	media_entity_cleanup(&sensor->subdev.entity);
+	media_entity_cleanup(&sensor->sd.entity);
 
 error_handler_free:
 	ar0822_free_controls(sensor);
@@ -1898,7 +1897,7 @@ static int ar0822_probe(struct i2c_client *client)
 
 	dev_dbg(sensor->dev, "Probing AR0822 sensor\n");
 
-	v4l2_i2c_subdev_init(&sensor->subdev, client, &ar0822_subdev_ops);
+	v4l2_i2c_subdev_init(&sensor->sd, client, &ar0822_subdev_ops);
 
 	ret = ar0822_parse_hw_config(sensor);
 	if (ret)
@@ -1955,11 +1954,11 @@ err_power_off:
 
 static void ar0822_remove(struct i2c_client *client)
 {
-	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
-	struct ar0822 *sensor = to_ar0822(subdev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0822 *sensor = to_ar0822(sd);
 
-	v4l2_async_unregister_subdev(subdev);
-	media_entity_cleanup(&subdev->entity);
+	v4l2_async_unregister_subdev(sd);
+	media_entity_cleanup(&sd->entity);
 	ar0822_free_controls(sensor);
 
 	/*
@@ -1975,8 +1974,8 @@ static void ar0822_remove(struct i2c_client *client)
 static int ar0822_runtime_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
-	struct ar0822 *sensor = to_ar0822(subdev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0822 *sensor = to_ar0822(sd);
 
 	return ar0822_power_on(sensor);
 }
@@ -1984,8 +1983,8 @@ static int ar0822_runtime_resume(struct device *dev)
 static int ar0822_runtime_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct v4l2_subdev *subdev = i2c_get_clientdata(client);
-	struct ar0822 *sensor = to_ar0822(subdev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct ar0822 *sensor = to_ar0822(sd);
 
 	ar0822_power_off(sensor);
 
