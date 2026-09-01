@@ -255,12 +255,6 @@ struct ar0822_hw_config {
 	enum ar0822_lane_mode_id lane_mode;
 };
 
-struct ar0822_mode {
-	const struct ar0822_format *format;
-	enum ar0822_bit_depth_id bit_depth;
-	bool hdr;
-};
-
 enum pad_types {
 	IMAGE_PAD,
 #ifdef AR0822_EMBEDDED_DATA_ENABLED
@@ -286,12 +280,6 @@ struct ar0822 {
 	struct v4l2_ctrl *vflip;
 	struct v4l2_ctrl *exposure;
 	struct v4l2_ctrl *hdr_mode;
-
-	/* Protects mode, fmt_code and streaming state */
-	struct mutex mutex;
-	bool streaming;
-	struct ar0822_mode mode;
-	unsigned int fmt_code;
 };
 
 enum ar0822_extclk_link_id {
@@ -808,13 +796,62 @@ static inline struct ar0822 *to_ar0822(struct v4l2_subdev *sd)
 	return container_of(sd, struct ar0822, sd);
 }
 
-static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
+static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
+{
+	u8 i;
+
+	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
+		if (ar0822_format_codes[i] == code)
+			break;
+
+	if (i >= AR0822_NUM_BIT_DEPTHS)
+		i = 0;
+
+	return ar0822_format_codes[i];
+}
+
+static int ar0822_get_bit_depth_id(u32 code,
+				   enum ar0822_bit_depth_id *bit_depth_id)
+{
+	enum ar0822_bit_depth_id i;
+
+	if (!bit_depth_id)
+		return -EINVAL;
+
+	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
+		if (ar0822_format_codes[i] == code)
+			break;
+
+	if (i >= AR0822_NUM_BIT_DEPTHS)
+		return -ENOENT;
+
+	*bit_depth_id = i;
+
+	return 0;
+}
+
+static const struct ar0822_format *
+ar0822_state_get_format(struct ar0822 *sensor, struct v4l2_subdev_state *state,
+			enum ar0822_bit_depth_id *bit_depth_id)
+{
+	struct v4l2_mbus_framefmt *fmt;
+
+	fmt = v4l2_subdev_state_get_format(state, IMAGE_PAD);
+	if (ar0822_get_bit_depth_id(fmt->code, bit_depth_id))
+		*bit_depth_id = AR0822_BIT_DEPTH_ID_10BIT;
+
+	return v4l2_find_nearest_size(sensor->pll_config->formats,
+				      sensor->pll_config->num_formats, width,
+				      height, fmt->width, fmt->height);
+}
+
+static void ar0822_adjust_exposure_range(struct ar0822 *sensor,
+					 const struct ar0822_format *format)
 {
 	int exposure_max;
-	u32 frame_length_lines =
-		sensor->mode.format->height + sensor->vblank->val;
+	u32 frame_length_lines = format->height + sensor->vblank->val;
 
-	if (sensor->mode.hdr) {
+	if (sensor->hdr_mode->val) {
 		/*
 		 * Limit exposure range ensuring fixed FPS based on frame length lines.
 		 * Calculate sensor internal vblank (not v4l2) based on output rows.
@@ -823,7 +860,7 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 		 * Following HDR exposure limit calculations assume that T1/T2 and
 		 * T2/T3 ratios are at their default 16x settings.
 		 */
-		u16 rows = (sensor->mode.format->height == 2160) ? 2174 : 1092;
+		u16 rows = (format->height == 2160) ? 2174 : 1092;
 		u32 vblank = frame_length_lines - rows;
 		u32 fll_limit;
 
@@ -848,22 +885,23 @@ static void ar0822_adjust_exposure_range(struct ar0822 *sensor)
 				 exposure_max);
 }
 
-static const struct ar0822_timing *ar0822_get_timing(struct ar0822 *sensor)
+static const struct ar0822_timing *
+ar0822_get_timing(struct ar0822 *sensor, const struct ar0822_format *format,
+		  enum ar0822_bit_depth_id bit_depth_id)
 {
-	if (sensor->mode.hdr) {
-		return &sensor->mode.format
-				->timing_hdr[sensor->hw_config.lane_mode];
-	}
+	if (sensor->hdr_mode->val)
+		return &format->timing_hdr[sensor->hw_config.lane_mode];
 
-	return &sensor->mode.format->timing_no_hdr[sensor->hw_config.lane_mode]
-						  [sensor->mode.bit_depth];
+	return &format->timing_no_hdr[sensor->hw_config.lane_mode][bit_depth_id];
 }
 
-static void ar0822_set_framing_limits(struct ar0822 *sensor)
+static void ar0822_set_framing_limits(struct ar0822 *sensor,
+				      const struct ar0822_format *format,
+				      enum ar0822_bit_depth_id bit_depth_id)
 {
+	const struct ar0822_timing *timing =
+		ar0822_get_timing(sensor, format, bit_depth_id);
 	int hblank, vblank_min;
-	const struct ar0822_format *format = sensor->mode.format;
-	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 
 	/* Update limits and set FPS to default */
 	vblank_min = timing->frame_length_lines_min - format->height;
@@ -883,21 +921,37 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	struct ar0822 *sensor =
 		container_of(ctrl->handler, struct ar0822, ctrl_handler);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
+	const struct ar0822_format *format;
+	enum ar0822_bit_depth_id bit_depth_id;
+	struct v4l2_subdev_state *state;
 	int ret = 0;
 
+	state = v4l2_subdev_get_locked_active_state(&sensor->sd);
+	format = ar0822_state_get_format(sensor, state, &bit_depth_id);
+
 	if (ctrl->id == V4L2_CID_VBLANK) {
-		ar0822_adjust_exposure_range(sensor);
+		ar0822_adjust_exposure_range(sensor, format);
 	} else if (ctrl->id == V4L2_CID_WIDE_DYNAMIC_RANGE) {
 		/*
 		 * The WIDE_DYNAMIC_RANGE control can also be applied immediately
 		 * as it doesn't set any registers. Don't do anything if the mode
 		 * already matches.
 		 */
-		if (sensor->mode.hdr != ctrl->val) {
+		if (ctrl->val != ctrl->cur.val) {
 			dev_dbg(sensor->dev, "hdr %d\n", ctrl->val);
 
-			sensor->mode.hdr = ctrl->val;
-			ar0822_set_framing_limits(sensor);
+			/* HDR streams 12-bit only, refresh a stale 10-bit code */
+			if (ctrl->val) {
+				struct v4l2_mbus_framefmt *fmt =
+					v4l2_subdev_state_get_format(state,
+								     IMAGE_PAD);
+
+				fmt->code = ar0822_format_codes
+					[AR0822_BIT_DEPTH_ID_12BIT];
+				bit_depth_id = AR0822_BIT_DEPTH_ID_12BIT;
+			}
+
+			ar0822_set_framing_limits(sensor, format, bit_depth_id);
 		}
 	}
 
@@ -911,9 +965,9 @@ static int ar0822_set_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		dev_dbg(sensor->dev, "%s: AR0822_REG_FRAME_LENGTH_LINES %d\n",
-			__func__, sensor->mode.format->height + ctrl->val);
+			__func__, format->height + ctrl->val);
 		ret = cci_write(sensor->regmap, AR0822_REG_FRAME_LENGTH_LINES,
-				sensor->mode.format->height + ctrl->val, NULL);
+				format->height + ctrl->val, NULL);
 		break;
 	case V4L2_CID_EXPOSURE:
 		dev_dbg(sensor->dev,
@@ -985,21 +1039,24 @@ static const struct v4l2_ctrl_ops ar0822_ctrl_ops = {
 
 static int ar0822_init_controls(struct ar0822 *sensor)
 {
+	const struct ar0822_format *format = &sensor->pll_config->formats[0];
 	struct v4l2_ctrl_handler *ctrl_hdlr = &sensor->ctrl_handler;
-	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
+	const struct ar0822_timing *timing;
 	struct v4l2_fwnode_device_properties props;
 	struct v4l2_ctrl *ctrl;
 	u8 link_freq_id;
 	u32 exposure_max;
+	int hblank, vblank_min;
 	int ret;
+
+	/* Seed limits from default format, state and controls do not exist yet */
+	timing = &format->timing_no_hdr[sensor->hw_config.lane_mode]
+				       [AR0822_BIT_DEPTH_ID_10BIT];
 
 	ret = v4l2_ctrl_handler_init(ctrl_hdlr, 16);
 	if (ret)
 		return ret;
-
-	mutex_init(&sensor->mutex);
-	ctrl_hdlr->lock = &sensor->mutex;
 
 	/* Link frequency (read only) */
 	link_freq_id = sensor->pll_config->freq_link - ar0822_link_frequencies;
@@ -1018,21 +1075,20 @@ static int ar0822_init_controls(struct ar0822 *sensor)
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	/*
-	 * Create the controls here, but mode specific limits are setup
-	 * in the ar0822_set_framing_limits() call below.
-	 */
-
 	/* Horizontal blanking (read only) */
+	hblank = timing->line_length_pck_min - format->width;
 	sensor->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
-					   V4L2_CID_HBLANK, 0, 0xFFFF, 1, 0);
+					   V4L2_CID_HBLANK, hblank, hblank, 1,
+					   hblank);
 	if (sensor->hblank)
 		sensor->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	/* Vertical blanking control */
+	vblank_min = timing->frame_length_lines_min - format->height;
 	sensor->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &ar0822_ctrl_ops,
-					   V4L2_CID_VBLANK, 0, 0xFFFF,
-					   AR0822_VBLANK_STEP, 0);
+					   V4L2_CID_VBLANK, vblank_min,
+					   AR0822_FLL_MAX - format->height,
+					   AR0822_VBLANK_STEP, vblank_min);
 
 	/* Exposure */
 	exposure_max = timing->frame_length_lines_min - AR0822_EXPOSURE_MARGIN;
@@ -1098,17 +1154,10 @@ static int ar0822_init_controls(struct ar0822 *sensor)
 
 	sensor->sd.ctrl_handler = ctrl_hdlr;
 
-	mutex_lock(&sensor->mutex);
-
-	ar0822_set_framing_limits(sensor);
-
-	mutex_unlock(&sensor->mutex);
-
 	return 0;
 
 error:
 	v4l2_ctrl_handler_free(ctrl_hdlr);
-	mutex_destroy(&sensor->mutex);
 	return ret;
 }
 
@@ -1151,17 +1200,18 @@ ar0822_reg_seq_write(struct regmap *regmap,
 				   reg_sequence->num_regs, NULL);
 }
 
-static int ar0822_config_pll(struct ar0822 *sensor)
+static int ar0822_config_pll(struct ar0822 *sensor,
+			     enum ar0822_bit_depth_id bit_depth_id)
 {
 	const struct ar0822_reg_sequence *regs_mipi =
-		&sensor->pll_config->regs_mipi[sensor->mode.bit_depth];
+		&sensor->pll_config->regs_mipi[bit_depth_id];
 	int ret;
 	u8 bit_depth;
 
-	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
+	ret = ar0822_get_bit_depth(bit_depth_id, &bit_depth);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Unsupported bit depth id %d\n",
-			sensor->mode.bit_depth);
+			bit_depth_id);
 		return ret;
 	}
 
@@ -1194,14 +1244,15 @@ static int ar0822_config_pll(struct ar0822 *sensor)
 	return ret;
 }
 
-static int ar0822_config_serial_format(struct ar0822 *sensor)
+static int ar0822_config_serial_format(struct ar0822 *sensor,
+				       enum ar0822_bit_depth_id bit_depth_id)
 {
 	int ret;
 	u8 bit_depth;
-	u16 data_format = sensor->mode.hdr ? AR0822_DATA_FORMAT_RAW_HDR :
-					     AR0822_DATA_FORMAT_RAW_LIN;
+	u16 data_format = sensor->hdr_mode->val ? AR0822_DATA_FORMAT_RAW_HDR :
+						  AR0822_DATA_FORMAT_RAW_LIN;
 
-	ret = ar0822_get_bit_depth(sensor->mode.bit_depth, &bit_depth);
+	ret = ar0822_get_bit_depth(bit_depth_id, &bit_depth);
 	if (ret < 0)
 		return ret;
 
@@ -1222,7 +1273,7 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 {
 	int ret = 0;
 
-	if (sensor->mode.hdr) {
+	if (sensor->hdr_mode->val) {
 		dev_dbg(sensor->dev, "Initializing hdr mfr registers\n");
 		ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_mfr_hdr,
 					  ARRAY_SIZE(ar0822_regs_mfr_hdr),
@@ -1238,50 +1289,61 @@ static int ar0822_config_mfr(struct ar0822 *sensor)
 	return ret;
 }
 
-static int ar0822_start_streaming(struct ar0822 *sensor)
+static int ar0822_enable_streams(struct v4l2_subdev *sd,
+				 struct v4l2_subdev_state *state, u32 pad,
+				 u64 streams_mask)
 {
+	struct ar0822 *sensor = to_ar0822(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
-	const struct ar0822_timing *timing = ar0822_get_timing(sensor);
+	const struct ar0822_format *format;
+	const struct ar0822_timing *timing;
+	enum ar0822_bit_depth_id bit_depth_id;
 	int ret;
+
+	/* Image and metadata pads stream together, start hardware once */
+	if (v4l2_subdev_is_streaming(sd))
+		return 0;
+
+	format = ar0822_state_get_format(sensor, state, &bit_depth_id);
+	timing = ar0822_get_timing(sensor, format, bit_depth_id);
 
 	ret = pm_runtime_resume_and_get(&client->dev);
 	if (ret < 0)
 		return ret;
 
 	/* Configure PLL and MIPI timings */
-	ret = ar0822_config_pll(sensor);
+	ret = ar0822_config_pll(sensor, bit_depth_id);
 	if (ret < 0)
-		return ret;
+		goto err_rpm_put;
 
 	/* Configure registers common for all modes */
 	ret = cci_multi_reg_write(sensor->regmap, ar0822_regs_common,
 				  ARRAY_SIZE(ar0822_regs_common), NULL);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Failed to write common regs: %d\n", ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	/* Configure manufacturer recommended registers */
 	ret = ar0822_config_mfr(sensor);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Failed to write mfr regs: %d\n", ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	/* Configure image format */
-	ret = ar0822_reg_seq_write(sensor->regmap,
-				   &sensor->mode.format->reg_sequence);
+	ret = ar0822_reg_seq_write(sensor->regmap, &format->reg_sequence);
 	if (ret < 0) {
 		dev_err(sensor->dev, "Failed to configure format: %d\n", ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	/* Configure serial format */
-	ret = ar0822_config_serial_format(sensor);
+	ret = ar0822_config_serial_format(sensor, bit_depth_id);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to configure serial format: %d\n",
 			ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	if (sensor->hdr_mode->val) {
@@ -1293,7 +1355,7 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 		if (ret) {
 			dev_err(sensor->dev, "Failed to config hdr mode: %d\n",
 				ret);
-			return ret;
+			goto err_rpm_put;
 		}
 	}
 
@@ -1302,106 +1364,58 @@ static int ar0822_start_streaming(struct ar0822 *sensor)
 			timing->line_length_pck_min, NULL);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to set line length: %d\n", ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	/* Apply customized values from user */
 	ret = __v4l2_ctrl_handler_setup(sensor->sd.ctrl_handler);
 	if (ret) {
 		dev_err(sensor->dev, "Failed to setup controls: %d\n", ret);
-		return ret;
+		goto err_rpm_put;
 	}
 
 	ret = ar0822_mode_stream_on(sensor);
+	if (ret)
+		goto err_rpm_put;
+
+	/* vflip, hflip and HDR cannot change during streaming */
+	__v4l2_ctrl_grab(sensor->vflip, true);
+	__v4l2_ctrl_grab(sensor->hflip, true);
+	__v4l2_ctrl_grab(sensor->hdr_mode, true);
+
+	return 0;
+
+err_rpm_put:
+	pm_runtime_mark_last_busy(&client->dev);
+	pm_runtime_put_autosuspend(&client->dev);
+
 	return ret;
 }
 
-/* Stop streaming */
-static void ar0822_stop_streaming(struct ar0822 *sensor)
+static int ar0822_disable_streams(struct v4l2_subdev *sd,
+				  struct v4l2_subdev_state *state, u32 pad,
+				  u64 streams_mask)
 {
+	struct ar0822 *sensor = to_ar0822(sd);
 	struct i2c_client *client = v4l2_get_subdevdata(&sensor->sd);
 	int ret;
+
+	/* Stop hardware only when the last enabled pad goes */
+	if (sd->enabled_pads & ~BIT_ULL(pad))
+		return 0;
 
 	ret = ar0822_mode_stream_off(sensor);
 	if (ret)
 		dev_err(&client->dev, "%s failed to set stream\n", __func__);
 
+	__v4l2_ctrl_grab(sensor->vflip, false);
+	__v4l2_ctrl_grab(sensor->hflip, false);
+	__v4l2_ctrl_grab(sensor->hdr_mode, false);
+
 	pm_runtime_mark_last_busy(&client->dev);
 	pm_runtime_put_autosuspend(&client->dev);
-}
-
-static int ar0822_set_stream(struct v4l2_subdev *sd, int enable)
-{
-	struct ar0822 *sensor = to_ar0822(sd);
-	int ret = 0;
-
-	mutex_lock(&sensor->mutex);
-	if (sensor->streaming == enable) {
-		mutex_unlock(&sensor->mutex);
-		return 0;
-	}
-
-	if (enable) {
-		/*
-		 * Apply default & customized values
-		 * and then start streaming.
-		 */
-		ret = ar0822_start_streaming(sensor);
-		if (ret)
-			goto err_start_streaming;
-	} else {
-		ar0822_stop_streaming(sensor);
-	}
-
-	sensor->streaming = enable;
-
-	/* vflip and hflip cannot change during streaming */
-	__v4l2_ctrl_grab(sensor->vflip, enable);
-	__v4l2_ctrl_grab(sensor->hflip, enable);
-	__v4l2_ctrl_grab(sensor->hdr_mode, enable);
-
-	mutex_unlock(&sensor->mutex);
 
 	return ret;
-
-err_start_streaming:
-	mutex_unlock(&sensor->mutex);
-
-	return ret;
-}
-
-static u32 ar0822_get_format_code(struct ar0822 *sensor, u32 code)
-{
-	u8 i;
-
-	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
-		if (ar0822_format_codes[i] == code)
-			break;
-
-	if (i >= AR0822_NUM_BIT_DEPTHS)
-		i = 0;
-
-	return ar0822_format_codes[i];
-}
-
-static int ar0822_get_bit_depth_id(u32 code,
-				   enum ar0822_bit_depth_id *bit_depth_id)
-{
-	enum ar0822_bit_depth_id i;
-
-	if (!bit_depth_id)
-		return -EINVAL;
-
-	for (i = 0; i < AR0822_NUM_BIT_DEPTHS; i++)
-		if (ar0822_format_codes[i] == code)
-			break;
-
-	if (i >= AR0822_NUM_BIT_DEPTHS)
-		return -ENOENT;
-
-	*bit_depth_id = i;
-
-	return 0;
 }
 
 static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
@@ -1414,7 +1428,7 @@ static int ar0822_enum_mbus_code(struct v4l2_subdev *sd,
 		return -EINVAL;
 
 	if (code->pad == IMAGE_PAD) {
-		if (sensor->mode.hdr) {
+		if (sensor->hdr_mode->val) {
 			if (code->index > 0)
 				return -EINVAL;
 
@@ -1470,15 +1484,6 @@ static int ar0822_enum_frame_size(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static void ar0822_set_default_format(struct ar0822 *sensor)
-{
-	/* Set default mode to max resolution */
-	sensor->mode.format = &sensor->pll_config->formats[0];
-	sensor->mode.bit_depth = AR0822_BIT_DEPTH_ID_10BIT;
-	sensor->mode.hdr = false;
-	sensor->fmt_code = ar0822_format_codes[0];
-}
-
 static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
 {
 	fmt->colorspace = V4L2_COLORSPACE_RAW;
@@ -1488,8 +1493,7 @@ static void ar0822_reset_colorspace(struct v4l2_mbus_framefmt *fmt)
 	fmt->xfer_func = V4L2_MAP_XFER_FUNC_DEFAULT(fmt->colorspace);
 }
 
-static void ar0822_update_image_pad_format(struct ar0822 *sensor,
-					   const struct ar0822_format *format,
+static void ar0822_update_image_pad_format(const struct ar0822_format *format,
 					   struct v4l2_subdev_format *fmt)
 {
 	fmt->format.width = format->width;
@@ -1506,120 +1510,59 @@ static void ar0822_update_metadata_pad_format(struct v4l2_subdev_format *fmt)
 	fmt->format.field = V4L2_FIELD_NONE;
 }
 
-static int ar0822_get_pad_format(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_state *sd_state,
-				 struct v4l2_subdev_format *fmt)
-{
-	struct ar0822 *sensor = to_ar0822(sd);
-
-	if (fmt->pad >= NUM_PADS)
-		return -EINVAL;
-
-	mutex_lock(&sensor->mutex);
-
-	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_state_get_format(sd_state, fmt->pad);
-
-		try_fmt->code =
-			fmt->pad == IMAGE_PAD ?
-				ar0822_get_format_code(sensor, try_fmt->code) :
-				MEDIA_BUS_FMT_SENSOR_DATA;
-		fmt->format = *try_fmt;
-	} else if (fmt->pad == IMAGE_PAD) {
-		ar0822_update_image_pad_format(sensor, sensor->mode.format,
-					       fmt);
-		fmt->format.code =
-			ar0822_get_format_code(sensor, sensor->fmt_code);
-	} else {
-		ar0822_update_metadata_pad_format(fmt);
-	}
-
-	mutex_unlock(&sensor->mutex);
-	return 0;
-}
-
 static int ar0822_set_pad_format(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
 	struct ar0822 *sensor = to_ar0822(sd);
 	const struct ar0822_format *format;
-	struct v4l2_mbus_framefmt *framefmt;
+	enum ar0822_bit_depth_id bit_depth_id;
 
 	if (fmt->pad >= NUM_PADS)
 		return -EINVAL;
 
-	mutex_lock(&sensor->mutex);
+	if (fmt->pad != IMAGE_PAD) {
+		/* Only one embedded data mode is supported */
+		ar0822_update_metadata_pad_format(fmt);
+		*v4l2_subdev_state_get_format(state, fmt->pad) = fmt->format;
 
-	if (fmt->pad == IMAGE_PAD) {
-		fmt->format.code =
-			ar0822_get_format_code(sensor, fmt->format.code);
-
-		format = v4l2_find_nearest_size(sensor->pll_config->formats,
-						sensor->pll_config->num_formats,
-						width, height,
-						fmt->format.width,
-						fmt->format.height);
-
-		ar0822_update_image_pad_format(sensor, format, fmt);
-		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt =
-				v4l2_subdev_state_get_format(state, fmt->pad);
-			*framefmt = fmt->format;
-		} else if ((sensor->mode.format != format) ||
-			   (sensor->fmt_code != fmt->format.code)) {
-			sensor->mode.format = format;
-			ar0822_get_bit_depth_id(fmt->format.code,
-						&sensor->mode.bit_depth);
-			sensor->fmt_code = fmt->format.code;
-			ar0822_set_framing_limits(sensor);
-		}
-	} else {
-		if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-			framefmt =
-				v4l2_subdev_state_get_format(state, fmt->pad);
-			*framefmt = fmt->format;
-		} else {
-			/* Only one embedded data mode is supported */
-			ar0822_update_metadata_pad_format(fmt);
-		}
+		return 0;
 	}
 
-	mutex_unlock(&sensor->mutex);
+	fmt->format.code = ar0822_get_format_code(sensor, fmt->format.code);
+
+	format = v4l2_find_nearest_size(sensor->pll_config->formats,
+					sensor->pll_config->num_formats, width,
+					height, fmt->format.width,
+					fmt->format.height);
+	ar0822_update_image_pad_format(format, fmt);
+
+	*v4l2_subdev_state_get_format(state, IMAGE_PAD) = fmt->format;
+
+	*v4l2_subdev_state_get_crop(state, IMAGE_PAD) = format->crop;
+
+	if (fmt->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
+		if (ar0822_get_bit_depth_id(fmt->format.code, &bit_depth_id))
+			bit_depth_id = AR0822_BIT_DEPTH_ID_10BIT;
+
+		ar0822_set_framing_limits(sensor, format, bit_depth_id);
+	}
 
 	return 0;
-}
-
-static const struct v4l2_rect *
-__ar0822_get_pad_crop(struct ar0822 *sensor, struct v4l2_subdev_state *sd_state,
-		      unsigned int pad, enum v4l2_subdev_format_whence which)
-{
-	switch (which) {
-	case V4L2_SUBDEV_FORMAT_TRY:
-		return v4l2_subdev_state_get_crop(sd_state, pad);
-	case V4L2_SUBDEV_FORMAT_ACTIVE:
-		return &sensor->mode.format->crop;
-	}
-
-	return NULL;
 }
 
 static int ar0822_get_selection(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
-	switch (sel->target) {
-	case V4L2_SEL_TGT_CROP: {
-		struct ar0822 *sensor = to_ar0822(sd);
+	if (sel->pad != IMAGE_PAD)
+		return -EINVAL;
 
-		mutex_lock(&sensor->mutex);
-		sel->r = *__ar0822_get_pad_crop(sensor, sd_state, sel->pad,
-						sel->which);
-		mutex_unlock(&sensor->mutex);
+	switch (sel->target) {
+	case V4L2_SEL_TGT_CROP:
+		sel->r = *v4l2_subdev_state_get_crop(sd_state, IMAGE_PAD);
 
 		return 0;
-	}
 	case V4L2_SEL_TGT_NATIVE_SIZE:
 		sel->r.top = 0;
 		sel->r.left = 0;
@@ -1640,21 +1583,51 @@ static int ar0822_get_selection(struct v4l2_subdev *sd,
 	return -EINVAL;
 }
 
+static int ar0822_init_state(struct v4l2_subdev *sd,
+			     struct v4l2_subdev_state *state)
+{
+	struct ar0822 *sensor = to_ar0822(sd);
+	struct v4l2_subdev_format fmt = {
+		.which = V4L2_SUBDEV_FORMAT_TRY,
+		.pad = IMAGE_PAD,
+		.format = {
+			.code = ar0822_format_codes[0],
+			.width = sensor->pll_config->formats[0].width,
+			.height = sensor->pll_config->formats[0].height,
+		},
+	};
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
+	struct v4l2_subdev_format meta_fmt = {
+		.which = V4L2_SUBDEV_FORMAT_TRY,
+		.pad = METADATA_PAD,
+	};
+#endif /* AR0822_EMBEDDED_DATA_ENABLED */
+
+	ar0822_set_pad_format(sd, state, &fmt);
+#ifdef AR0822_EMBEDDED_DATA_ENABLED
+	ar0822_set_pad_format(sd, state, &meta_fmt);
+#endif /* AR0822_EMBEDDED_DATA_ENABLED */
+
+	return 0;
+}
+
 static const struct v4l2_subdev_core_ops ar0822_core_ops = {
 	.subscribe_event = v4l2_ctrl_subdev_subscribe_event,
 	.unsubscribe_event = v4l2_event_subdev_unsubscribe,
 };
 
 static const struct v4l2_subdev_video_ops ar0822_video_ops = {
-	.s_stream = ar0822_set_stream,
+	.s_stream = v4l2_subdev_s_stream_helper,
 };
 
 static const struct v4l2_subdev_pad_ops ar0822_pad_ops = {
 	.enum_mbus_code = ar0822_enum_mbus_code,
 	.enum_frame_size = ar0822_enum_frame_size,
-	.get_fmt = ar0822_get_pad_format,
+	.get_fmt = v4l2_subdev_get_fmt,
 	.set_fmt = ar0822_set_pad_format,
 	.get_selection = ar0822_get_selection,
+	.enable_streams = ar0822_enable_streams,
+	.disable_streams = ar0822_disable_streams,
 };
 
 static const struct v4l2_subdev_ops ar0822_subdev_ops = {
@@ -1663,10 +1636,13 @@ static const struct v4l2_subdev_ops ar0822_subdev_ops = {
 	.pad = &ar0822_pad_ops,
 };
 
+static const struct v4l2_subdev_internal_ops ar0822_internal_ops = {
+	.init_state = ar0822_init_state,
+};
+
 static void ar0822_free_controls(struct ar0822 *sensor)
 {
 	v4l2_ctrl_handler_free(&sensor->ctrl_handler);
-	mutex_destroy(&sensor->mutex);
 }
 
 static int ar0822_subdev_init(struct ar0822 *sensor)
@@ -1677,6 +1653,7 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 	if (ret)
 		return ret;
 
+	sensor->sd.internal_ops = &ar0822_internal_ops;
 	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE |
 			    V4L2_SUBDEV_FL_HAS_EVENTS;
 	sensor->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
@@ -1691,14 +1668,25 @@ static int ar0822_subdev_init(struct ar0822 *sensor)
 		goto error_handler_free;
 	}
 
+	sensor->sd.state_lock = sensor->ctrl_handler.lock;
+	ret = v4l2_subdev_init_finalize(&sensor->sd);
+	if (ret < 0) {
+		dev_err(sensor->dev, "failed to finalize subdev init: %d\n",
+			ret);
+		goto error_media_entity;
+	}
+
 	ret = v4l2_async_register_subdev_sensor(&sensor->sd);
 	if (ret < 0) {
 		dev_err(sensor->dev,
 			"failed to register sensor sub-device: %d\n", ret);
-		goto error_media_entity;
+		goto error_subdev_cleanup;
 	}
 
 	return 0;
+
+error_subdev_cleanup:
+	v4l2_subdev_cleanup(&sensor->sd);
 
 error_media_entity:
 	media_entity_cleanup(&sensor->sd.entity);
@@ -1927,9 +1915,6 @@ static int ar0822_probe(struct i2c_client *client)
 	if (ret)
 		goto err_power_off;
 
-	/* Initialize default format */
-	ar0822_set_default_format(sensor);
-
 	ret = ar0822_subdev_init(sensor);
 	if (ret)
 		goto err_power_off;
@@ -1958,6 +1943,7 @@ static void ar0822_remove(struct i2c_client *client)
 	struct ar0822 *sensor = to_ar0822(sd);
 
 	v4l2_async_unregister_subdev(sd);
+	v4l2_subdev_cleanup(sd);
 	media_entity_cleanup(&sd->entity);
 	ar0822_free_controls(sensor);
 
