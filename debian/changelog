@@ -1,3 +1,23 @@
+ar0822-rpi-dkms (0.1.2-1) unstable; urgency=medium
+
+  * Soft reset sensor to register defaults at stream start. Supports
+    camera modules without a wired hardware reset.
+  * Convert format, crop and blanking to V4L2 subdev state model.
+    TRY state is seeded on open and reports real mode geometry rather
+    than zeros.
+  * Report 12-bit while wide dynamic range control is on. HDR streams
+    are 12-bit only, so a 10-bit request no longer leaves a mismatched
+    serial configuration.
+  * Report package version through module version field, so modinfo
+    and dkms status agree.
+  * Build overlay in a temporary directory during DKMS post install,
+    leaving no stray build tree behind.
+  * Add device-tree-compiler dependency since post install builds
+    overlay with dtc.
+  * d/rules: Name both remedies in version drift error.
+
+ -- Danius Kalvaitis <danius@kurokesu.com>  Tue, 01 Sep 2026 14:21:52 +0300
+
 ar0822-rpi-dkms (0.1.1-1) unstable; urgency=medium
 
   * Report V4L2_COLORSPACE_RAW rather than sRGB. Sensor emits
